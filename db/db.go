@@ -58,8 +58,17 @@ func (db *DB) Get(metric string, timestamp int64) (float64, error) {
 	return db.kv.Get(metric, timestamp)
 }
 
+func (db *DB) Range(metric string, start, end int64) []Point {
+	return db.kv.Range(metric, start, end)
+}
+
 func (db *DB) recover() error {
 	for {
+		start, err := db.log.aof.Seek(0, io.SeekCurrent)
+		if err != nil {
+			return err
+		}
+
 		sp, err := DecodeRecord(db.log.aof)
 
 		if err == io.EOF {
@@ -67,6 +76,9 @@ func (db *DB) recover() error {
 		}
 
 		if errors.Is(err, io.ErrUnexpectedEOF) {
+			if err := db.log.aof.Truncate(start); err != nil {
+				return err
+			}
 			break
 		}
 
