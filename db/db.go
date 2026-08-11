@@ -44,7 +44,7 @@ func (db *DB) Open(filepath string) error {
 	db.log = NewLog(fp)
 
 	for {
-		sp, err := DecodePoint(fp)
+		sp, err := DecodeRecord(fp)
 
 		if err == io.EOF {
 			break
@@ -73,7 +73,12 @@ func (db *DB) Close() {
 	db.log.aof.Close()
 }
 
-func (db *DB) Put(metric string, timestamp int64, value float64) {
+func (db *DB) Put(metric string, timestamp int64, value float64) error {
+
+	err := db.log.Write(EncodeRecord(SavePoint{metric: metric, timestamp: timestamp, value: value}))
+	if err != nil {
+		return err
+	}
 
 	series, ok := db.Series[metric]
 
@@ -82,8 +87,9 @@ func (db *DB) Put(metric string, timestamp int64, value float64) {
 		db.Series[metric] = series
 	}
 
-	db.log.Write(EncodePoint(SavePoint{metric: metric, timestamp: timestamp, value: value}))
 	series.Points = append(series.Points, Point{Timestamp: timestamp, Value: value})
+
+	return nil
 }
 
 func (db *DB) Get(metric string, timestamp int64) (float64, error) {
