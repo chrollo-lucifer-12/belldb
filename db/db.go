@@ -50,6 +50,10 @@ func (db *DB) Open(filepath string) error {
 			break
 		}
 
+		if errors.Is(err, io.ErrUnexpectedEOF) {
+			break
+		}
+
 		if err != nil {
 			return err
 		}
@@ -69,8 +73,8 @@ func (db *DB) Open(filepath string) error {
 	return nil
 }
 
-func (db *DB) Close() {
-	db.log.aof.Close()
+func (db *DB) Close() error {
+	return db.log.aof.Close()
 }
 
 func (db *DB) Put(metric string, timestamp int64, value float64) error {

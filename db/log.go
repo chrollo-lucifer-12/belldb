@@ -30,12 +30,7 @@ func (log *Log) Write(data []byte) error {
 		return err
 	}
 
-	err = log.aof.Sync()
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return log.aof.Sync()
 }
 
 func (log *Log) Read(buf []byte, offset int64) error {
