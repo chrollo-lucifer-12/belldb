@@ -1,7 +1,10 @@
 package db
 
 import (
+	"errors"
 	"fmt"
+	"io"
+	"os"
 )
 
 type Point struct {
@@ -15,6 +18,7 @@ type Series struct {
 
 type DB struct {
 	Series map[string]*Series
+	log    *Log
 }
 
 func errMetricNotFound(metric string) error {
@@ -31,6 +35,44 @@ func NewDB() *DB {
 	}
 }
 
+func (db *DB) Open(filepath string) error {
+	fp, err := os.OpenFile(filepath, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		return errors.Join(errors.New("db open"), err)
+	}
+
+	db.log = NewLog(fp)
+
+	for {
+		sp, err := DecodePoint(fp)
+
+		if err == io.EOF {
+			break
+		}
+
+		if err != nil {
+			return err
+		}
+
+		series, ok := db.Series[sp.metric]
+		if !ok {
+			series = &Series{}
+			db.Series[sp.metric] = series
+		}
+
+		series.Points = append(series.Points, Point{
+			Timestamp: sp.timestamp,
+			Value:     sp.value,
+		})
+	}
+
+	return nil
+}
+
+func (db *DB) Close() {
+	db.log.aof.Close()
+}
+
 func (db *DB) Put(metric string, timestamp int64, value float64) {
 
 	series, ok := db.Series[metric]
@@ -40,6 +82,7 @@ func (db *DB) Put(metric string, timestamp int64, value float64) {
 		db.Series[metric] = series
 	}
 
+	db.log.Write(EncodePoint(SavePoint{metric: metric, timestamp: timestamp, value: value}))
 	series.Points = append(series.Points, Point{Timestamp: timestamp, Value: value})
 }
 
