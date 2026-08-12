@@ -86,7 +86,7 @@ func (s *Series) Range(start, end int64) []Point {
 
 func lowerBound(points []Point, timestamp int64) int {
 
-	low, high := 0, len(points)-1
+	low, high := 0, len(points)
 
 	for low < high {
 		mid := low + (high-low)/2

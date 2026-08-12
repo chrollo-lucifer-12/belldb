@@ -122,7 +122,6 @@ func TestRecoveryFromPartialRecord(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.db")
 
-	// Write two records.
 	db := NewDB()
 
 	if err := db.Open(path); err != nil {
@@ -141,7 +140,6 @@ func TestRecoveryFromPartialRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Simulate power loss by truncating the last record.
 	fp, err := os.OpenFile(path, os.O_RDWR, 0644)
 	if err != nil {
 		t.Fatal(err)
@@ -162,7 +160,6 @@ func TestRecoveryFromPartialRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Recover.
 	db = NewDB()
 
 	if err := db.Open(path); err != nil {
@@ -171,7 +168,6 @@ func TestRecoveryFromPartialRecord(t *testing.T) {
 
 	defer db.Close()
 
-	// First record should survive.
 	value, err := db.Get("cpu", 1000)
 	if err != nil {
 		t.Fatal(err)
@@ -181,7 +177,6 @@ func TestRecoveryFromPartialRecord(t *testing.T) {
 		t.Fatalf("expected 42, got %v", value)
 	}
 
-	// Second record should have been discarded.
 	_, err = db.Get("cpu", 2000)
 	if err == nil {
 		t.Fatal("expected second record to be lost")
