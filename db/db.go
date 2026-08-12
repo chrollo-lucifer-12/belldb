@@ -7,10 +7,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/belldb/flag"
 	"github.com/belldb/wal"
 )
-
-var DATA_DIR = filepath.Join("..", "data", "chunks")
 
 type DB struct {
 	kv  *KV
@@ -100,7 +99,7 @@ func (db *DB) recover() error {
 
 func (db *DB) recoverMetrics() error {
 
-	metrics, err := os.ReadDir(DATA_DIR)
+	metrics, err := os.ReadDir(flag.DATA_DIR)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return err
@@ -114,7 +113,7 @@ func (db *DB) recoverMetrics() error {
 
 		metric := metricDir.Name()
 
-		chunks, err := LoadChunks(filepath.Join(DATA_DIR, metric))
+		chunks, err := LoadChunks(filepath.Join(flag.DATA_DIR, metric))
 		if err != nil {
 			return err
 		}

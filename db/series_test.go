@@ -1,15 +1,25 @@
 package db
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/belldb/flag"
+)
 
 func TestSeriesAppend(t *testing.T) {
-	s := &Series{}
+	flag.DATA_DIR = t.TempDir()
+
+	s := &Series{
+		name: "test",
+	}
 
 	for i := 0; i < 2500; i++ {
-		s.Append(Point{
+		if err := s.Append(Point{
 			Timestamp: int64(i),
 			Value:     float64(i) * 10,
-		})
+		}); err != nil {
+			t.Fatalf("Append(%d) failed: %v", i, err)
+		}
 	}
 
 	if len(s.Chunks) != 3 {
@@ -30,11 +40,7 @@ func TestSeriesAppend(t *testing.T) {
 }
 
 func TestSeriesGet(t *testing.T) {
-	oldDataDir := DATA_DIR
-	DATA_DIR = t.TempDir()
-	defer func() {
-		DATA_DIR = oldDataDir
-	}()
+	flag.DATA_DIR = t.TempDir()
 
 	s := &Series{
 		name: "test",
@@ -60,13 +66,19 @@ func TestSeriesGet(t *testing.T) {
 }
 
 func TestSeriesGetNotFound(t *testing.T) {
-	s := &Series{}
+	flag.DATA_DIR = t.TempDir()
+
+	s := &Series{
+		name: "test",
+	}
 
 	for i := 0; i < 2500; i++ {
-		s.Append(Point{
+		if err := s.Append(Point{
 			Timestamp: int64(i),
 			Value:     float64(i),
-		})
+		}); err != nil {
+			t.Fatalf("Append(%d) failed: %v", i, err)
+		}
 	}
 
 	tests := []int64{-1, 2500, 9999}
@@ -81,22 +93,17 @@ func TestSeriesGetNotFound(t *testing.T) {
 }
 
 func TestSeriesRange(t *testing.T) {
-	oldDataDir := DATA_DIR
-	DATA_DIR = t.TempDir()
-	defer func() {
-		DATA_DIR = oldDataDir
-	}()
+	flag.DATA_DIR = t.TempDir()
 
 	s := &Series{
 		name: "test",
 	}
 
 	for i := 0; i < 2500; i++ {
-		err := s.Append(Point{
+		if err := s.Append(Point{
 			Timestamp: int64(i),
 			Value:     float64(i),
-		})
-		if err != nil {
+		}); err != nil {
 			t.Fatalf("Append(%d) failed: %v", i, err)
 		}
 	}
@@ -119,13 +126,19 @@ func TestSeriesRange(t *testing.T) {
 }
 
 func TestSeriesRangeSingleChunk(t *testing.T) {
-	s := &Series{}
+	flag.DATA_DIR = t.TempDir()
+
+	s := &Series{
+		name: "test",
+	}
 
 	for i := 0; i < 100; i++ {
-		s.Append(Point{
+		if err := s.Append(Point{
 			Timestamp: int64(i),
 			Value:     float64(i),
-		})
+		}); err != nil {
+			t.Fatalf("Append(%d) failed: %v", i, err)
+		}
 	}
 
 	result := s.Range(20, 50)

@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"github.com/belldb/flag"
 )
 
 func EncodePoints(w io.Writer, points []Point) error {
@@ -35,7 +37,7 @@ func EncodePoints(w io.Writer, points []Point) error {
 func (s *Series) Flush(metric string) error {
 	points := s.Chunks[s.activeChunk].Points
 
-	dir := filepath.Join(DATA_DIR, metric)
+	dir := filepath.Join(flag.DATA_DIR, metric)
 
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
