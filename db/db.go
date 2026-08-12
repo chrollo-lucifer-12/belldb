@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/belldb/wal"
 )
@@ -26,16 +27,20 @@ func NewDB() *DB {
 	return &DB{}
 }
 
-func (db *DB) Open(filepath string) error {
+func (db *DB) Open(path string) error {
 
 	db.kv = NewKV()
 
-	fp, err := os.OpenFile(filepath, os.O_RDWR|os.O_CREATE, 0644)
+	fp, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		return errors.Join(errors.New("db open"), err)
 	}
 
 	db.log = wal.NewLog(fp)
+
+	if err := db.recoverMetrics(); err != nil {
+		return err
+	}
 
 	return db.recover()
 }
@@ -87,6 +92,44 @@ func (db *DB) recover() error {
 		}
 
 		db.kv.Put(sp.Metric, sp.Timestamp, sp.Value)
+	}
+
+	return nil
+}
+
+func (db *DB) recoverMetrics() error {
+	chunkDir := "data/chunks"
+
+	metrics, err := os.ReadDir(chunkDir)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
+	}
+
+	for _, metricDir := range metrics {
+		if !metricDir.IsDir() {
+			continue
+		}
+
+		metric := metricDir.Name()
+
+		chunks, err := LoadChunks(filepath.Join(chunkDir, metric))
+		if err != nil {
+			return err
+		}
+
+		series := &Series{
+			Chunks: chunks,
+			name:   metric,
+		}
+
+		db.kv.Series[metric] = series
+	}
+
+	for _, series := range db.kv.Series {
+		series.activeChunk = len(series.Chunks)
+		series.AddChunk()
 	}
 
 	return nil

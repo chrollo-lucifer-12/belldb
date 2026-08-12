@@ -14,6 +14,7 @@ type Chunk struct {
 type Series struct {
 	Chunks      []*Chunk
 	activeChunk int
+	name        string
 }
 
 func (s *Series) AddChunk() {
@@ -26,7 +27,7 @@ func (s *Series) Append(p Point) error {
 	}
 
 	if len(s.Chunks[s.activeChunk].Points) == ChunkSize {
-		err := s.Flush()
+		err := s.Flush(s.name)
 		if err != nil {
 			return err
 		}

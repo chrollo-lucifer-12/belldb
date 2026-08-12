@@ -12,7 +12,7 @@ func (kv *KV) Put(metric string, timestamp int64, value float64) error {
 	series, ok := kv.Series[metric]
 
 	if !ok {
-		series = &Series{}
+		series = &Series{name: metric}
 		kv.Series[metric] = series
 	}
 

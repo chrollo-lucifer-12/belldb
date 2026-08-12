@@ -32,12 +32,10 @@ func EncodePoints(w io.Writer, points []Point) error {
 	return nil
 }
 
-func (s *Series) Flush() error {
+func (s *Series) Flush(metric string) error {
 	points := s.Chunks[s.activeChunk].Points
 
-	idx := strconv.Itoa(s.activeChunk)
-
-	dir := filepath.Join("data", "chunks", idx)
+	dir := filepath.Join("data", "chunks", metric)
 
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
@@ -46,7 +44,7 @@ func (s *Series) Flush() error {
 	startTimestamp := points[0].Timestamp
 	timestampStr := strconv.Itoa(int(startTimestamp))
 
-	path := filepath.Join("data", "chunks", idx, timestampStr)
+	path := filepath.Join("data", "chunks", metric, timestampStr)
 
 	fp, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil {
