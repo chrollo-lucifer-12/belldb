@@ -69,29 +69,28 @@ func (db *DB) Range(metric string, start, end int64) []Point {
 
 func (db *DB) recover() error {
 	for {
-		start, err := db.log.Seek(0, io.SeekCurrent)
-		if err != nil {
-			return err
-		}
-
 		sp, err := wal.DecodeRecord(db.log.Reader())
 
 		if err == io.EOF {
 			break
 		}
 
-		if errors.Is(err, io.ErrUnexpectedEOF) {
-			if err := db.log.Truncate(start); err != nil {
-				return err
-			}
-			break
-		}
-
 		if err != nil {
 			return err
 		}
 
-		db.kv.Put(sp.Metric, sp.Timestamp, sp.Value)
+		series, ok := db.kv.Series[sp.Metric]
+
+		if !ok {
+			series = &Series{name: sp.Metric}
+
+			series.activeChunk = 0
+			series.AddChunk()
+
+			db.kv.Series[sp.Metric] = series
+		}
+
+		series.Append(Point{Timestamp: sp.Timestamp, Value: sp.Value})
 	}
 
 	return nil
