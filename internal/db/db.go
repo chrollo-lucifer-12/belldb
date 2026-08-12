@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 
-	"github.com/belldb/flag"
-	"github.com/belldb/wal"
+	"github.com/belldb/internal/storage"
+	"github.com/belldb/internal/wal"
 )
 
 type DB struct {
@@ -39,10 +38,6 @@ func (db *DB) Open(path string) error {
 
 	db.log = wal.NewLog(fp)
 
-	if err := db.recoverMetrics(); err != nil {
-		return err
-	}
-
 	return db.recover()
 }
 
@@ -64,7 +59,7 @@ func (db *DB) Get(metric string, timestamp int64) (float64, error) {
 	return db.kv.Get(metric, timestamp)
 }
 
-func (db *DB) Range(metric string, start, end int64) []Point {
+func (db *DB) Range(metric string, start, end int64) []storage.Point {
 	return db.kv.Range(metric, start, end)
 }
 
@@ -85,50 +80,12 @@ func (db *DB) recover() error {
 		if !ok {
 			series = &Series{name: sp.Metric}
 
-			series.activeChunk = 0
-			series.AddChunk()
+			series.activeChunk = &storage.Chunk{}
 
 			db.kv.Series[sp.Metric] = series
 		}
 
-		series.Append(Point{Timestamp: sp.Timestamp, Value: sp.Value})
-	}
-
-	return nil
-}
-
-func (db *DB) recoverMetrics() error {
-
-	metrics, err := os.ReadDir(flag.DATA_DIR)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			return err
-		}
-	}
-
-	for _, metricDir := range metrics {
-		if !metricDir.IsDir() {
-			continue
-		}
-
-		metric := metricDir.Name()
-
-		chunks, err := LoadChunks(filepath.Join(flag.DATA_DIR, metric))
-		if err != nil {
-			return err
-		}
-
-		series := &Series{
-			Chunks: chunks,
-			name:   metric,
-		}
-
-		db.kv.Series[metric] = series
-	}
-
-	for _, series := range db.kv.Series {
-		series.activeChunk = len(series.Chunks)
-		series.AddChunk()
+		series.Append(storage.Point{Timestamp: sp.Timestamp, Value: sp.Value})
 	}
 
 	return nil

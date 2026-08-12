@@ -1,5 +1,7 @@
 package db
 
+import "github.com/belldb/internal/storage"
+
 type KV struct {
 	Series map[string]*Series
 }
@@ -16,7 +18,7 @@ func (kv *KV) Put(metric string, timestamp int64, value float64) error {
 		kv.Series[metric] = series
 	}
 
-	return series.Append(Point{Timestamp: timestamp, Value: value})
+	return series.Append(storage.Point{Timestamp: timestamp, Value: value})
 }
 
 func (kv *KV) Get(metric string, timestamp int64) (float64, error) {
@@ -28,7 +30,7 @@ func (kv *KV) Get(metric string, timestamp int64) (float64, error) {
 	return series.Get(timestamp)
 }
 
-func (kv *KV) Range(metric string, start, end int64) []Point {
+func (kv *KV) Range(metric string, start, end int64) []storage.Point {
 	series, ok := kv.Series[metric]
 	if !ok {
 		return nil
