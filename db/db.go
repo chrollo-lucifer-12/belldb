@@ -10,6 +10,8 @@ import (
 	"github.com/belldb/wal"
 )
 
+var DATA_DIR string
+
 type DB struct {
 	kv  *KV
 	log *wal.Log
@@ -71,7 +73,7 @@ func (db *DB) recover() error {
 	for {
 		sp, err := wal.DecodeRecord(db.log.Reader())
 
-		if err == io.EOF {
+		if err == io.EOF || err == io.ErrUnexpectedEOF {
 			break
 		}
 
@@ -97,9 +99,8 @@ func (db *DB) recover() error {
 }
 
 func (db *DB) recoverMetrics() error {
-	chunkDir := "data/chunks"
 
-	metrics, err := os.ReadDir(chunkDir)
+	metrics, err := os.ReadDir(DATA_DIR)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return err
@@ -113,7 +114,7 @@ func (db *DB) recoverMetrics() error {
 
 		metric := metricDir.Name()
 
-		chunks, err := LoadChunks(filepath.Join(chunkDir, metric))
+		chunks, err := LoadChunks(filepath.Join(DATA_DIR, metric))
 		if err != nil {
 			return err
 		}
