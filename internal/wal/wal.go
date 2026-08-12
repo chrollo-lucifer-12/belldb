@@ -3,6 +3,8 @@ package wal
 import (
 	"io"
 	"os"
+
+	"github.com/belldb/internal/storage"
 )
 
 type Log struct {
@@ -10,9 +12,8 @@ type Log struct {
 }
 
 type SavePoint struct {
-	Metric    string
-	Timestamp int64
-	Value     float64
+	Metric string
+	Point  storage.Point
 }
 
 func NewLog(aof *os.File) *Log {

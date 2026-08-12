@@ -6,31 +6,24 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
-	"math"
+
+	"github.com/belldb/internal/storage"
 )
 
 func Encode(p SavePoint) []byte {
-	paylod := make([]byte, 2+len(p.Metric)+8+8)
+	var buf bytes.Buffer
 
-	binary.LittleEndian.PutUint16(paylod[0:2], uint16(len(p.Metric)))
-
-	copy(paylod[2:2+len(p.Metric)], p.Metric)
-
-	offset := 2 + len(p.Metric)
-
-	binary.LittleEndian.PutUint64(
-		paylod[offset:offset+8],
-		uint64(p.Timestamp),
+	binary.Write(
+		&buf,
+		binary.LittleEndian,
+		uint16(len(p.Metric)),
 	)
 
-	offset += 8
+	buf.WriteString(p.Metric)
 
-	binary.LittleEndian.PutUint64(
-		paylod[offset:offset+8],
-		math.Float64bits(p.Value),
-	)
+	storage.EncodePoints(&buf, []storage.Point{p.Point})
 
-	return paylod
+	return buf.Bytes()
 }
 
 func EncodeRecord(sp SavePoint) []byte {
@@ -75,10 +68,10 @@ func DecodeRecord(r io.Reader) (SavePoint, error) {
 		return SavePoint{}, fmt.Errorf("checksum mismatch")
 	}
 
-	return DecodePoint(bytes.NewReader(payload))
+	return DecodePayload(bytes.NewReader(payload))
 }
 
-func DecodePoint(r io.Reader) (SavePoint, error) {
+func DecodePayload(r io.Reader) (SavePoint, error) {
 	var metricLen uint16
 
 	if err := binary.Read(r, binary.LittleEndian, &metricLen); err != nil {
@@ -91,19 +84,13 @@ func DecodePoint(r io.Reader) (SavePoint, error) {
 		return SavePoint{}, err
 	}
 
-	var timestamp int64
-	if err := binary.Read(r, binary.LittleEndian, &timestamp); err != nil {
-		return SavePoint{}, err
-	}
-
-	var valueBits uint64
-	if err := binary.Read(r, binary.LittleEndian, &valueBits); err != nil {
+	points, err := storage.DecodePoints(r)
+	if err != nil {
 		return SavePoint{}, err
 	}
 
 	return SavePoint{
-		Metric:    string(metric),
-		Timestamp: timestamp,
-		Value:     math.Float64frombits(valueBits),
+		Metric: string(metric),
+		Point:  points[0],
 	}, nil
 }

@@ -53,7 +53,7 @@ func (db *DB) Close() error {
 
 func (db *DB) Put(metric string, timestamp int64, value float64) error {
 
-	err := db.log.Write(wal.EncodeRecord(wal.SavePoint{Metric: metric, Timestamp: timestamp, Value: value}))
+	err := db.log.Write(wal.EncodeRecord(wal.SavePoint{Metric: metric, Point: storage.Point{Timestamp: timestamp, Value: value}}))
 	if err != nil {
 		return err
 	}
@@ -146,7 +146,7 @@ func (db *DB) recover() error {
 			db.kv.Series[sp.Metric] = series
 		}
 
-		series.Append(storage.Point{Timestamp: sp.Timestamp, Value: sp.Value})
+		series.Append(storage.Point{Timestamp: sp.Point.Timestamp, Value: sp.Point.Value})
 	}
 
 	return nil
