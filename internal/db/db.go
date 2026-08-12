@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
+	"github.com/belldb/internal/config"
 	"github.com/belldb/internal/storage"
 	"github.com/belldb/internal/wal"
 )
@@ -36,6 +38,10 @@ func (db *DB) Open(path string) error {
 		return errors.Join(errors.New("db open"), err)
 	}
 
+	if err := db.recoverMetadata(); err != nil {
+		return err
+	}
+
 	db.log = wal.NewLog(fp)
 
 	return db.recover()
@@ -61,6 +67,61 @@ func (db *DB) Get(metric string, timestamp int64) (float64, error) {
 
 func (db *DB) Range(metric string, start, end int64) []storage.Point {
 	return db.kv.Range(metric, start, end)
+}
+
+func (db *DB) recoverMetadata() error {
+	entries, err := os.ReadDir(config.DATA_DIR)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		metric := entry.Name()
+
+		metaFilePath := filepath.Join(
+			config.DATA_DIR,
+			metric,
+			"meta.json",
+		)
+
+		metadata, err := storage.LoadMeta(metaFilePath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return err
+		}
+
+		series, ok := db.kv.Series[metric]
+		if !ok {
+			series = &Series{
+				name:        metric,
+				activeChunk: &storage.Chunk{},
+			}
+
+			db.kv.Series[metric] = series
+		}
+
+		for _, chunk := range metadata.Chunks {
+			series.chunks = append(
+				series.chunks,
+				storage.ChunkMetaData{
+					MinTs: chunk.MinTs,
+					MaxTs: chunk.MaxTs,
+					Path:  chunk.Path,
+				},
+			)
+		}
+	}
+
+	return nil
 }
 
 func (db *DB) recover() error {

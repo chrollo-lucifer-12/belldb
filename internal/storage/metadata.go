@@ -7,22 +7,37 @@ import (
 )
 
 type ChunkMetaData struct {
-	Metadata
-	Path string
+	MinTs int64  `json:"min_ts"`
+	MaxTs int64  `json:"max_ts"`
+	Path  string `json:"path"`
 }
 
 type Metadata struct {
-	MinTs int64 `json:"minTs"`
-	MaxTs int64 `json:"maxTs"`
+	Chunks []ChunkMetaData `json:"chunks"`
 }
 
-func saveMeta(metaData Metadata, dir string) error {
-	data, err := json.Marshal(metaData)
+func SaveMeta(chunkMeta ChunkMetaData, dir string) error {
+	metaFile := filepath.Join(dir, "meta.json")
+
+	var metadata Metadata
+
+	data, err := os.ReadFile(metaFile)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
+	} else {
+		if err := json.Unmarshal(data, &metadata); err != nil {
+			return err
+		}
+	}
+
+	metadata.Chunks = append(metadata.Chunks, chunkMeta)
+
+	data, err = json.Marshal(metadata)
 	if err != nil {
 		return err
 	}
-
-	metaFile := filepath.Join(dir, "meta.json")
 
 	tmpFile := metaFile + ".tmp"
 
@@ -52,11 +67,9 @@ func saveMeta(metaData Metadata, dir string) error {
 	return os.Rename(tmpFile, metaFile)
 }
 
-func loadMeta(dir string) (Metadata, error) {
+func LoadMeta(metaFilePath string) (Metadata, error) {
 
-	metaFile := filepath.Join(dir, "meta.json")
-
-	data, err := os.ReadFile(metaFile)
+	data, err := os.ReadFile(metaFilePath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return Metadata{}, nil

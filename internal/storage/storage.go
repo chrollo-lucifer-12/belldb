@@ -31,14 +31,12 @@ func Flush(metric string, points []Point) error {
 		return err
 	}
 
-	if err := saveMeta(Metadata{MinTs: minTs, MaxTs: maxTs}, dir); err != nil {
+	timestampStr := strconv.Itoa(int(minTs))
+	path := filepath.Join(dir, timestampStr)
+
+	if err := SaveMeta(ChunkMetaData{MinTs: minTs, MaxTs: maxTs, Path: path}, dir); err != nil {
 		return err
 	}
-
-	startTimestamp := points[0].Timestamp
-	timestampStr := strconv.Itoa(int(startTimestamp))
-
-	path := filepath.Join(dir, timestampStr)
 
 	fp, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil {
