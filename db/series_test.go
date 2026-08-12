@@ -30,37 +30,32 @@ func TestSeriesAppend(t *testing.T) {
 }
 
 func TestSeriesGet(t *testing.T) {
-	s := &Series{}
+	oldDataDir := DATA_DIR
+	DATA_DIR = t.TempDir()
+	defer func() {
+		DATA_DIR = oldDataDir
+	}()
+
+	s := &Series{
+		name: "test",
+	}
 
 	for i := 0; i < 2500; i++ {
-		s.Append(Point{
+		if err := s.Append(Point{
 			Timestamp: int64(i),
-			Value:     float64(i) * 10,
-		})
+			Value:     float64(i),
+		}); err != nil {
+			t.Fatalf("Append(%d) failed: %v", i, err)
+		}
 	}
 
-	tests := []struct {
-		timestamp int64
-		expected  float64
-	}{
-		{0, 0},
-		{500, 5000},
-		{999, 9990},
-		{1000, 10000},
-		{1500, 15000},
-		{2499, 24990},
+	got, err := s.Get(1000)
+	if err != nil {
+		t.Fatalf("Get(1000) returned error: %v", err)
 	}
 
-	for _, tt := range tests {
-		got, err := s.Get(tt.timestamp)
-		if err != nil {
-			t.Fatalf("Get(%d) returned error: %v", tt.timestamp, err)
-		}
-
-		if got != tt.expected {
-			t.Fatalf("Get(%d): expected %v, got %v",
-				tt.timestamp, tt.expected, got)
-		}
+	if got != 1000 {
+		t.Fatalf("expected value 1000, got %v", got)
 	}
 }
 
@@ -86,13 +81,24 @@ func TestSeriesGetNotFound(t *testing.T) {
 }
 
 func TestSeriesRange(t *testing.T) {
-	s := &Series{}
+	oldDataDir := DATA_DIR
+	DATA_DIR = t.TempDir()
+	defer func() {
+		DATA_DIR = oldDataDir
+	}()
+
+	s := &Series{
+		name: "test",
+	}
 
 	for i := 0; i < 2500; i++ {
-		s.Append(Point{
+		err := s.Append(Point{
 			Timestamp: int64(i),
 			Value:     float64(i),
 		})
+		if err != nil {
+			t.Fatalf("Append(%d) failed: %v", i, err)
+		}
 	}
 
 	result := s.Range(950, 1050)

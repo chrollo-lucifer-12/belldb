@@ -10,7 +10,7 @@ import (
 	"github.com/belldb/wal"
 )
 
-var DATA_DIR string
+var DATA_DIR = filepath.Join("..", "data", "chunks")
 
 type DB struct {
 	kv  *KV
