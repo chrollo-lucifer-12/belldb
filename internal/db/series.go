@@ -10,23 +10,26 @@ type Series struct {
 	chunks      []storage.ChunkMetaData
 }
 
-func (s *Series) Append(p storage.Point) error {
+func (s *Series) Append(p storage.Point) (flushed bool, err error) {
 	if s.activeChunk == nil {
 		s.activeChunk = &storage.Chunk{}
 	}
 
+	flushed = false
 	if len(s.activeChunk.Points) == ChunkSize {
 		err := storage.Flush(s.name, s.activeChunk.Points)
 		if err != nil {
-			return err
+
+			return flushed, err
 		}
+		flushed = true
 		s.activeChunk = &storage.Chunk{}
 	}
 
 	s.activeChunk.Points =
 		append(s.activeChunk.Points, p)
 
-	return nil
+	return flushed, nil
 }
 
 func (s *Series) Get(timestamp int64) (float64, error) {

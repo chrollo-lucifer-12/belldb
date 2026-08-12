@@ -10,7 +10,7 @@ func NewKV() *KV {
 	return &KV{Series: make(map[string]*Series)}
 }
 
-func (kv *KV) Put(metric string, timestamp int64, value float64) error {
+func (kv *KV) Put(metric string, timestamp int64, value float64) (bool, error) {
 	series, ok := kv.Series[metric]
 
 	if !ok {

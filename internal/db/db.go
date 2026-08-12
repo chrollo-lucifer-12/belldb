@@ -1,7 +1,6 @@
 package db
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -33,16 +32,15 @@ func (db *DB) Open(path string) error {
 
 	db.kv = NewKV()
 
-	fp, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0644)
-	if err != nil {
-		return errors.Join(errors.New("db open"), err)
-	}
-
+	var err error
 	if err := db.recoverMetadata(); err != nil {
 		return err
 	}
 
-	db.log = wal.NewLog(fp)
+	db.log, err = wal.NewLog(config.DATA_DIR)
+	if err != nil {
+		return err
+	}
 
 	return db.recover()
 }
@@ -58,7 +56,16 @@ func (db *DB) Put(metric string, timestamp int64, value float64) error {
 		return err
 	}
 
-	return db.kv.Put(metric, timestamp, value)
+	flushed, err := db.kv.Put(metric, timestamp, value)
+	if err != nil {
+		return err
+	}
+
+	if flushed {
+		return db.log.Checkpoint()
+	}
+
+	return nil
 }
 
 func (db *DB) Get(metric string, timestamp int64) (float64, error) {
