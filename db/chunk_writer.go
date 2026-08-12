@@ -10,7 +10,7 @@ import (
 )
 
 func EncodePoints(w io.Writer, points []Point) error {
-	size := len(points)
+	size := int32(len(points))
 
 	if err := binary.Write(w, binary.LittleEndian, size); err != nil {
 		return err
