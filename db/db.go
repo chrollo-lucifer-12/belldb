@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/belldb/wal"
 )
 
 type DB struct {
 	kv  *KV
-	log *Log
+	log *wal.Log
 }
 
 func errMetricNotFound(metric string) error {
@@ -33,18 +35,18 @@ func (db *DB) Open(filepath string) error {
 		return errors.Join(errors.New("db open"), err)
 	}
 
-	db.log = NewLog(fp)
+	db.log = wal.NewLog(fp)
 
 	return db.recover()
 }
 
 func (db *DB) Close() error {
-	return db.log.aof.Close()
+	return db.log.Close()
 }
 
 func (db *DB) Put(metric string, timestamp int64, value float64) error {
 
-	err := db.log.Write(EncodeRecord(SavePoint{metric: metric, timestamp: timestamp, value: value}))
+	err := db.log.Write(wal.EncodeRecord(wal.SavePoint{Metric: metric, Timestamp: timestamp, Value: value}))
 	if err != nil {
 		return err
 	}
@@ -64,19 +66,19 @@ func (db *DB) Range(metric string, start, end int64) []Point {
 
 func (db *DB) recover() error {
 	for {
-		start, err := db.log.aof.Seek(0, io.SeekCurrent)
+		start, err := db.log.Seek(0, io.SeekCurrent)
 		if err != nil {
 			return err
 		}
 
-		sp, err := DecodeRecord(db.log.aof)
+		sp, err := wal.DecodeRecord(db.log.Reader())
 
 		if err == io.EOF {
 			break
 		}
 
 		if errors.Is(err, io.ErrUnexpectedEOF) {
-			if err := db.log.aof.Truncate(start); err != nil {
+			if err := db.log.Truncate(start); err != nil {
 				return err
 			}
 			break
@@ -86,7 +88,7 @@ func (db *DB) recover() error {
 			return err
 		}
 
-		db.kv.Put(sp.metric, sp.timestamp, sp.value)
+		db.kv.Put(sp.Metric, sp.Timestamp, sp.Value)
 	}
 
 	return nil

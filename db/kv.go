@@ -1,14 +1,5 @@
 package db
 
-type Point struct {
-	Timestamp int64
-	Value     float64
-}
-
-type Series struct {
-	Points []Point
-}
-
 type KV struct {
 	Series map[string]*Series
 }
@@ -25,7 +16,7 @@ func (kv *KV) Put(metric string, timestamp int64, value float64) {
 		kv.Series[metric] = series
 	}
 
-	series.Points = append(series.Points, Point{Timestamp: timestamp, Value: value})
+	series.Append(Point{Timestamp: timestamp, Value: value})
 }
 
 func (kv *KV) Get(metric string, timestamp int64) (float64, error) {
@@ -34,13 +25,7 @@ func (kv *KV) Get(metric string, timestamp int64) (float64, error) {
 		return -1, errMetricNotFound(metric)
 	}
 
-	idx := kv.lowerBound(series, timestamp, 0, len(series.Points))
-
-	if idx == len(series.Points) || series.Points[idx].Timestamp != timestamp {
-		return -1, errTimestampNotFound(timestamp)
-	}
-
-	return series.Points[idx].Value, nil
+	return series.Get(timestamp)
 }
 
 func (kv *KV) Range(metric string, start, end int64) []Point {
@@ -49,22 +34,5 @@ func (kv *KV) Range(metric string, start, end int64) []Point {
 		return nil
 	}
 
-	startIdx := kv.lowerBound(series, start, 0, len(series.Points))
-	endIdx := kv.lowerBound(series, end, 0, len(series.Points))
-
-	return series.Points[startIdx:endIdx]
-}
-
-func (kv *KV) lowerBound(series *Series, timestamp int64, low, high int) int {
-	for low < high {
-		mid := low + (high-low)/2
-
-		if series.Points[mid].Timestamp < timestamp {
-			low = mid + 1
-		} else {
-			high = mid
-		}
-	}
-
-	return low
+	return series.Range(start, end)
 }

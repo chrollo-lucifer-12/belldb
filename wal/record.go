@@ -1,4 +1,4 @@
-package db
+package wal
 
 import (
 	"bytes"
@@ -7,56 +7,27 @@ import (
 	"hash/crc32"
 	"io"
 	"math"
-	"os"
 )
 
-type Log struct {
-	aof *os.File
-}
-
-type SavePoint struct {
-	metric    string
-	timestamp int64
-	value     float64
-}
-
-func NewLog(aof *os.File) *Log {
-	return &Log{aof: aof}
-}
-
-func (log *Log) Write(data []byte) error {
-	_, err := log.aof.Write(data)
-	if err != nil {
-		return err
-	}
-
-	return log.aof.Sync()
-}
-
-func (log *Log) Read(buf []byte, offset int64) error {
-	_, err := log.aof.ReadAt(buf, offset)
-	return err
-}
-
 func Encode(p SavePoint) []byte {
-	paylod := make([]byte, 2+len(p.metric)+8+8)
+	paylod := make([]byte, 2+len(p.Metric)+8+8)
 
-	binary.LittleEndian.PutUint16(paylod[0:2], uint16(len(p.metric)))
+	binary.LittleEndian.PutUint16(paylod[0:2], uint16(len(p.Metric)))
 
-	copy(paylod[2:2+len(p.metric)], p.metric)
+	copy(paylod[2:2+len(p.Metric)], p.Metric)
 
-	offset := 2 + len(p.metric)
+	offset := 2 + len(p.Metric)
 
 	binary.LittleEndian.PutUint64(
 		paylod[offset:offset+8],
-		uint64(p.timestamp),
+		uint64(p.Timestamp),
 	)
 
 	offset += 8
 
 	binary.LittleEndian.PutUint64(
 		paylod[offset:offset+8],
-		math.Float64bits(p.value),
+		math.Float64bits(p.Value),
 	)
 
 	return paylod
@@ -131,8 +102,8 @@ func DecodePoint(r io.Reader) (SavePoint, error) {
 	}
 
 	return SavePoint{
-		metric:    string(metric),
-		timestamp: timestamp,
-		value:     math.Float64frombits(valueBits),
+		Metric:    string(metric),
+		Timestamp: timestamp,
+		Value:     math.Float64frombits(valueBits),
 	}, nil
 }
