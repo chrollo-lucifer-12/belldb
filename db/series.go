@@ -20,18 +20,24 @@ func (s *Series) AddChunk() {
 	s.Chunks = append(s.Chunks, &Chunk{})
 }
 
-func (s *Series) Append(p Point) {
+func (s *Series) Append(p Point) error {
 	if len(s.Chunks) == 0 {
 		s.AddChunk()
 	}
 
 	if len(s.Chunks[s.activeChunk].Points) == ChunkSize {
+		err := s.Flush()
+		if err != nil {
+			return err
+		}
 		s.activeChunk++
 		s.AddChunk()
 	}
 
 	s.Chunks[s.activeChunk].Points =
 		append(s.Chunks[s.activeChunk].Points, p)
+
+	return nil
 }
 
 func (s *Series) Get(timestamp int64) (float64, error) {

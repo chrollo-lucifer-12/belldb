@@ -51,9 +51,7 @@ func (db *DB) Put(metric string, timestamp int64, value float64) error {
 		return err
 	}
 
-	db.kv.Put(metric, timestamp, value)
-
-	return nil
+	return db.kv.Put(metric, timestamp, value)
 }
 
 func (db *DB) Get(metric string, timestamp int64) (float64, error) {

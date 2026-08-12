@@ -8,7 +8,7 @@ func NewKV() *KV {
 	return &KV{Series: make(map[string]*Series)}
 }
 
-func (kv *KV) Put(metric string, timestamp int64, value float64) {
+func (kv *KV) Put(metric string, timestamp int64, value float64) error {
 	series, ok := kv.Series[metric]
 
 	if !ok {
@@ -16,7 +16,7 @@ func (kv *KV) Put(metric string, timestamp int64, value float64) {
 		kv.Series[metric] = series
 	}
 
-	series.Append(Point{Timestamp: timestamp, Value: value})
+	return series.Append(Point{Timestamp: timestamp, Value: value})
 }
 
 func (kv *KV) Get(metric string, timestamp int64) (float64, error) {
