@@ -29,7 +29,6 @@ type DODChunk struct {
 }
 
 func DecompressChunk(dodChunk *DODChunk) (Chunk, error) {
-
 	chunk := Chunk{
 		Points: make([]Point, 0, dodChunk.count),
 	}
@@ -42,80 +41,83 @@ func DecompressChunk(dodChunk *DODChunk) (Chunk, error) {
 		return Chunk{}, io.ErrUnexpectedEOF
 	}
 
-	offset := 0
+	timestampOffset := 0
 
 	firstTimestamp := int64(
 		binary.LittleEndian.Uint64(
-			dodChunk.timestamps[offset : offset+8],
+			dodChunk.timestamps[timestampOffset : timestampOffset+8],
 		),
 	)
-	offset += 8
+
+	timestampOffset += 8
 
 	if len(dodChunk.values) < 8 {
 		return Chunk{}, io.ErrUnexpectedEOF
 	}
 
-	if len(dodChunk.values) < 8 {
-		return Chunk{}, io.ErrUnexpectedEOF
-	}
+	valueOffset := 0
 
 	lastValue := binary.LittleEndian.Uint64(
-		dodChunk.values[:8],
+		dodChunk.values[valueOffset : valueOffset+8],
 	)
 
-	value := math.Float64frombits(lastValue)
+	valueOffset += 8
 
 	chunk.Points = append(chunk.Points, Point{
 		Timestamp: firstTimestamp,
-		Value:     value,
+		Value:     math.Float64frombits(lastValue),
 	})
 
 	if dodChunk.count == 1 {
 		return chunk, nil
 	}
 
-	if len(dodChunk.timestamps) < offset+8 {
+	if len(dodChunk.timestamps) < timestampOffset+8 {
 		return Chunk{}, io.ErrUnexpectedEOF
 	}
 
 	lastDelta := int64(
 		binary.LittleEndian.Uint64(
-			dodChunk.timestamps[offset : offset+8],
+			dodChunk.timestamps[timestampOffset : timestampOffset+8],
 		),
 	)
-	offset += 8
+
+	timestampOffset += 8
 
 	lastTimestamp := firstTimestamp + lastDelta
 
-	if len(dodChunk.values) < 16 {
+	if len(dodChunk.values) < valueOffset+8 {
 		return Chunk{}, io.ErrUnexpectedEOF
 	}
 
 	xor := binary.LittleEndian.Uint64(
-		dodChunk.values[8:16],
+		dodChunk.values[valueOffset : valueOffset+8],
 	)
+
+	valueOffset += 8
 
 	lastValue ^= xor
 
-	value = math.Float64frombits(lastValue)
-
 	chunk.Points = append(chunk.Points, Point{
 		Timestamp: lastTimestamp,
-		Value:     value,
+		Value:     math.Float64frombits(lastValue),
 	})
 
-	valueOffset := 16
-
 	for i := 2; i < dodChunk.count; i++ {
-		dod, n := binary.Varint(dodChunk.timestamps[offset:])
+
+		dod, n := binary.Varint(
+			dodChunk.timestamps[timestampOffset:],
+		)
+
 		if n == 0 {
 			return Chunk{}, io.ErrUnexpectedEOF
 		}
+
 		if n < 0 {
 			return Chunk{}, fmt.Errorf("invalid delta-of-delta encoding")
 		}
 
-		offset += n
+		timestampOffset += n
 
 		delta := lastDelta + dod
 		timestamp := lastTimestamp + delta
@@ -128,18 +130,17 @@ func DecompressChunk(dodChunk *DODChunk) (Chunk, error) {
 			dodChunk.values[valueOffset : valueOffset+8],
 		)
 
-		lastValue ^= xor
+		valueOffset += 8
 
-		value = math.Float64frombits(lastValue)
+		lastValue ^= xor
 
 		chunk.Points = append(chunk.Points, Point{
 			Timestamp: timestamp,
-			Value:     value,
+			Value:     math.Float64frombits(lastValue),
 		})
 
 		lastTimestamp = timestamp
 		lastDelta = delta
-		valueOffset += 8
 	}
 
 	return chunk, nil
@@ -157,6 +158,7 @@ func CompressChunk(chunk *Chunk) (*DODChunk, error) {
 	}
 
 	var buf [8]byte
+
 	binary.LittleEndian.PutUint64(
 		buf[:],
 		uint64(chunk.Points[0].Timestamp),
@@ -164,13 +166,10 @@ func CompressChunk(chunk *Chunk) (*DODChunk, error) {
 
 	dod.timestamps = append(dod.timestamps, buf[:]...)
 
-	dod.lastValue = math.Float64bits(chunk.Points[0].Value)
+	lastValue := math.Float64bits(chunk.Points[0].Value)
+	dod.lastValue = lastValue
 
-	binary.LittleEndian.PutUint64(
-		buf[:],
-		dod.lastValue,
-	)
-
+	binary.LittleEndian.PutUint64(buf[:], lastValue)
 	dod.values = append(dod.values, buf[:]...)
 
 	if len(chunk.Points) == 1 {
@@ -188,6 +187,14 @@ func CompressChunk(chunk *Chunk) (*DODChunk, error) {
 	dod.timestamps = append(dod.timestamps, buf[:]...)
 
 	lastTimestamp = chunk.Points[1].Timestamp
+
+	currValue := math.Float64bits(chunk.Points[1].Value)
+	xor := currValue ^ dod.lastValue
+
+	binary.LittleEndian.PutUint64(buf[:], xor)
+	dod.values = append(dod.values, buf[:]...)
+
+	dod.lastValue = currValue
 
 	for i := 2; i < len(chunk.Points); i++ {
 		ts := chunk.Points[i].Timestamp

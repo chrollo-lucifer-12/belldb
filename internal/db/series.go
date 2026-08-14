@@ -37,13 +37,15 @@ func (s *Series) FlushChunk() (bool, error) {
 
 func (s *Series) Append(p storage.Point) (flushed bool, err error) {
 	if s.activeChunk == nil {
-		s.activeChunk = &storage.Chunk{}
+		s.activeChunk = &storage.Chunk{
+			Points: make([]storage.Point, 0, ChunkSize),
+		}
 	}
-
-	flushed, err = s.FlushChunk()
 
 	s.activeChunk.Points =
 		append(s.activeChunk.Points, p)
+
+	flushed, err = s.FlushChunk()
 
 	return flushed, nil
 }
