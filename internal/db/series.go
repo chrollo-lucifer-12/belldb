@@ -23,7 +23,9 @@ func (s *Series) Append(p storage.Point) (flushed bool, err error) {
 		}
 		flushed = true
 		s.chunks = append(s.chunks, meta)
-		s.activeChunk = &storage.Chunk{}
+		s.activeChunk = &storage.Chunk{
+			Points: make([]storage.Point, 0, ChunkSize),
+		}
 	}
 
 	s.activeChunk.Points =

@@ -27,9 +27,9 @@ func Flush(metric string, points []Point) (ChunkMetaData, error) {
 
 	dir := filepath.Join(config.DATA_DIR, metric)
 
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return ChunkMetaData{}, err
-	}
+	// if err := os.MkdirAll(dir, 0755); err != nil {
+	// 	return ChunkMetaData{}, err
+	// }
 
 	timestampStr := strconv.Itoa(int(minTs))
 	path := filepath.Join(dir, timestampStr)
@@ -46,13 +46,13 @@ func Flush(metric string, points []Point) (ChunkMetaData, error) {
 		return ChunkMetaData{}, err
 	}
 
-	if err := fp.Sync(); err != nil {
-		return ChunkMetaData{}, err
-	}
+	// if err := fp.Sync(); err != nil {
+	// 	return ChunkMetaData{}, err
+	// }
 
-	if err := SaveMeta(meta, dir); err != nil {
-		return ChunkMetaData{}, err
-	}
+	// if err := SaveMeta(meta, dir); err != nil {
+	// 	return ChunkMetaData{}, err
+	// }
 
 	return meta, nil
 }

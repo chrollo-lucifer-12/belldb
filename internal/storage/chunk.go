@@ -16,26 +16,32 @@ type Chunk struct {
 }
 
 func EncodePoints(w io.Writer, points []Point) error {
-	size := int32(len(points))
+	size := 4 + len(points)*16
+	buf := make([]byte, size)
 
-	if err := binary.Write(w, binary.LittleEndian, size); err != nil {
-		return err
-	}
+	binary.LittleEndian.PutUint32(
+		buf[0:4],
+		uint32(len(points)),
+	)
+
+	offset := 4
 
 	for _, point := range points {
-		ts := point.Timestamp
-		v := point.Value
+		binary.LittleEndian.PutUint64(
+			buf[offset:offset+8],
+			uint64(point.Timestamp),
+		)
+		offset += 8
 
-		if err := binary.Write(w, binary.LittleEndian, ts); err != nil {
-			return err
-		}
-
-		if err := binary.Write(w, binary.LittleEndian, math.Float64bits(v)); err != nil {
-			return err
-		}
+		binary.LittleEndian.PutUint64(
+			buf[offset:offset+8],
+			math.Float64bits(point.Value),
+		)
+		offset += 8
 	}
 
-	return nil
+	_, err := w.Write(buf)
+	return err
 }
 
 func DecodePoints(r io.Reader) ([]Point, error) {

@@ -37,7 +37,7 @@ func (db *DB) Open() error {
 		return err
 	}
 
-	db.log, err = wal.NewLog("data/wal/")
+	db.log, err = wal.NewLog()
 	if err != nil {
 		return err
 	}
@@ -46,6 +46,11 @@ func (db *DB) Open() error {
 }
 
 func (db *DB) Close() error {
+
+	for k, v := range db.kv.Series {
+		storage.SaveMeta(storage.Metadata{Chunks: v.chunks}, config.DATA_DIR+k)
+	}
+
 	return db.log.Close()
 }
 
@@ -56,14 +61,14 @@ func (db *DB) Put(metric string, timestamp int64, value float64) error {
 		return err
 	}
 
-	_, err = db.kv.Put(metric, timestamp, value)
+	flushed, err := db.kv.Put(metric, timestamp, value)
 	if err != nil {
 		return err
 	}
 
-	// if flushed {
-	// 	return db.log.Checkpoint()
-	// }
+	if flushed {
+		return db.log.Sync()
+	}
 
 	return nil
 }
@@ -151,7 +156,9 @@ func (db *DB) recover(maxTs int64) error {
 		if !ok {
 			series = &Series{name: sp.Metric}
 
-			series.activeChunk = &storage.Chunk{}
+			series.activeChunk = &storage.Chunk{
+				Points: make([]storage.Point, 0, ChunkSize),
+			}
 
 			db.kv.Series[sp.Metric] = series
 

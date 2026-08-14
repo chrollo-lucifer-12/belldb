@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"math"
 
 	"github.com/belldb/internal/storage"
 )
@@ -28,17 +29,49 @@ func Encode(p SavePoint) []byte {
 
 func EncodeRecord(sp SavePoint) []byte {
 
-	payload := Encode(sp)
+	metricLen := len(sp.Metric)
 
-	checksum := crc32.ChecksumIEEE(payload)
+	payloadLen := 2 + metricLen + 4 + 8 + 8
 
-	buf := make([]byte, 4+len(payload)+4)
+	buf := make([]byte, 4+payloadLen+4)
 
-	binary.LittleEndian.PutUint32(buf[0:4], uint32(len(payload)))
+	binary.LittleEndian.PutUint32(
+		buf[0:4],
+		uint32(payloadLen),
+	)
 
-	copy(buf[4:4+len(payload)], payload)
+	offset := 4
 
-	binary.LittleEndian.PutUint32(buf[4+len(payload):], checksum)
+	binary.LittleEndian.PutUint16(
+		buf[offset:offset+2],
+		uint16(metricLen),
+	)
+	offset += 2
+
+	copy(buf[offset:], sp.Metric)
+	offset += metricLen
+
+	binary.LittleEndian.PutUint32(buf[offset:offset+4], 1)
+	offset += 4
+
+	binary.LittleEndian.PutUint64(
+		buf[offset:offset+8],
+		uint64(sp.Point.Timestamp),
+	)
+	offset += 8
+
+	binary.LittleEndian.PutUint64(
+		buf[offset:offset+8],
+		math.Float64bits(sp.Point.Value),
+	)
+	offset += 8
+
+	checksum := crc32.ChecksumIEEE(buf[4 : 4+payloadLen])
+
+	binary.LittleEndian.PutUint32(
+		buf[4+payloadLen:],
+		checksum,
+	)
 
 	return buf
 }

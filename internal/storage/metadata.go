@@ -16,25 +16,10 @@ type Metadata struct {
 	Chunks []ChunkMetaData `json:"chunks"`
 }
 
-func SaveMeta(chunkMeta ChunkMetaData, dir string) error {
+func SaveMeta(metadata Metadata, dir string) error {
 	metaFile := filepath.Join(dir, "meta.json")
 
-	var metadata Metadata
-
-	data, err := os.ReadFile(metaFile)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			return err
-		}
-	} else {
-		if err := json.Unmarshal(data, &metadata); err != nil {
-			return err
-		}
-	}
-
-	metadata.Chunks = append(metadata.Chunks, chunkMeta)
-
-	data, err = json.Marshal(metadata)
+	data, err := json.Marshal(metadata)
 	if err != nil {
 		return err
 	}

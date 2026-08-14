@@ -1,6 +1,12 @@
 package db
 
-import "github.com/belldb/internal/storage"
+import (
+	"os"
+	"path/filepath"
+
+	"github.com/belldb/internal/config"
+	"github.com/belldb/internal/storage"
+)
 
 type KV struct {
 	Series map[string]*Series
@@ -14,6 +20,13 @@ func (kv *KV) Put(metric string, timestamp int64, value float64) (bool, error) {
 	series, ok := kv.Series[metric]
 
 	if !ok {
+
+		dir := filepath.Join(config.DATA_DIR, metric)
+
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return false, err
+		}
+
 		series = &Series{name: metric}
 		kv.Series[metric] = series
 	}

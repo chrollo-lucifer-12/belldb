@@ -1,18 +1,21 @@
 package wal
 
 import (
+	"bufio"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 
+	"github.com/belldb/internal/config"
 	"github.com/belldb/internal/storage"
 )
 
 type Log struct {
 	dir          string
 	aof          *os.File
+	buf          *bufio.Writer
 	checkpointID uint64
 }
 
@@ -21,10 +24,9 @@ type SavePoint struct {
 	Point  storage.Point
 }
 
-func NewLog(dir string) (*Log, error) {
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, err
-	}
+func NewLog() (*Log, error) {
+
+	dir := config.LOG_DIR
 
 	path := filepath.Join(dir, "wal.db")
 
@@ -40,6 +42,7 @@ func NewLog(dir string) (*Log, error) {
 	return &Log{
 		dir: dir,
 		aof: aof,
+		buf: bufio.NewWriterSize(aof, 64*1024),
 	}, nil
 }
 
@@ -48,12 +51,12 @@ func (log *Log) Close() error {
 }
 
 func (log *Log) Write(data []byte) error {
-	_, err := log.aof.Write(data)
+	_, err := log.buf.Write(data)
 	if err != nil {
 		return err
 	}
 
-	return log.aof.Sync()
+	return nil
 }
 
 func (log *Log) Read(buf []byte, offset int64) error {
@@ -75,6 +78,13 @@ func (log *Log) Reader() io.Reader {
 
 func (log *Log) Offset() (int64, error) {
 	return log.aof.Seek(0, io.SeekEnd)
+}
+
+func (log *Log) Sync() error {
+	if err := log.buf.Flush(); err != nil {
+		return err
+	}
+	return log.aof.Sync()
 }
 
 func (log *Log) Checkpoint() error {
