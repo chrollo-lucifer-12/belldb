@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -17,7 +18,40 @@ func LoadChunk(path string) ([]Point, error) {
 	defer fp.Close()
 
 	return DecodePoints(fp)
+}
 
+func LoadDODChunk(path string) (*DODChunk, error) {
+	fp, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer fp.Close()
+
+	return DecodeDODChunk(fp)
+}
+
+func FlushDODChunk(metric string, chunk *DODChunk) (ChunkMetaData, error) {
+	dir := filepath.Join(config.DATA_DIR, metric)
+
+	filename := fmt.Sprintf("%d.chunk", chunk.firstTimestamp)
+	path := filepath.Join(dir, filename)
+
+	file, err := os.Create(path)
+	if err != nil {
+		return ChunkMetaData{}, err
+	}
+	defer file.Close()
+
+	if err := EncodeDODChunk(file, *chunk); err != nil {
+		return ChunkMetaData{}, nil
+	}
+
+	return ChunkMetaData{
+		MinTs: chunk.firstTimestamp,
+		MaxTs: chunk.lastTimestamp,
+		Path:  path,
+		Count: chunk.count,
+	}, nil
 }
 
 func Flush(metric string, points []Point) (ChunkMetaData, error) {

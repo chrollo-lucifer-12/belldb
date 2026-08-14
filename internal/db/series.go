@@ -11,23 +11,36 @@ type Series struct {
 	cache       *Cache
 }
 
+func (s *Series) FlushChunk() (bool, error) {
+	if len(s.activeChunk.Points) < ChunkSize {
+		return false, nil
+	}
+
+	dodChunk, err := storage.CompressChunk(s.activeChunk)
+	if err != nil {
+		return false, nil
+	}
+
+	meta, err := storage.FlushDODChunk(s.name, dodChunk)
+	if err != nil {
+		return false, nil
+	}
+
+	s.chunks = append(s.chunks, meta)
+
+	s.activeChunk = &storage.Chunk{
+		Points: make([]storage.Point, 0, ChunkSize),
+	}
+
+	return true, nil
+}
+
 func (s *Series) Append(p storage.Point) (flushed bool, err error) {
 	if s.activeChunk == nil {
 		s.activeChunk = &storage.Chunk{}
 	}
 
-	flushed = false
-	if len(s.activeChunk.Points) == ChunkSize {
-		meta, err := storage.Flush(s.name, s.activeChunk.Points)
-		if err != nil {
-			return flushed, err
-		}
-		flushed = true
-		s.chunks = append(s.chunks, meta)
-		s.activeChunk = &storage.Chunk{
-			Points: make([]storage.Point, 0, ChunkSize),
-		}
-	}
+	flushed, err = s.FlushChunk()
 
 	s.activeChunk.Points =
 		append(s.activeChunk.Points, p)
@@ -43,33 +56,25 @@ func (s *Series) Get(timestamp int64) (float64, error) {
 		return -1, errTimestampNotFound(timestamp)
 	}
 
-	var err error
 	var points []storage.Point
+	var err error
 
 	if chunkIdx == len(s.chunks) {
 		points = s.activeChunk.Points
-
-		idx := lowerBound(points, timestamp)
-
-		if idx < len(points) && points[idx].Timestamp == timestamp {
-			return points[idx].Value, nil
+	} else {
+		points, err = s.loadChunk(chunkIdx)
+		if err != nil {
+			return -1, err
 		}
-
-		return -1, errTimestampNotFound(timestamp)
 	}
 
-	chunk := s.chunks[chunkIdx]
+	idx := lowerBound(points, timestamp)
 
-	point, err := storage.FindPoint(
-		chunk.Path,
-		timestamp,
-		chunk.Count,
-	)
-	if err != nil {
-		return -1, err
+	if idx < len(points) && points[idx].Timestamp == timestamp {
+		return points[idx].Value, nil
 	}
 
-	return point.Value, nil
+	return -1, errTimestampNotFound(timestamp)
 
 }
 
@@ -174,12 +179,17 @@ func (s *Series) loadChunk(idx int) ([]storage.Point, error) {
 		return points, nil
 	}
 
-	points, err := storage.LoadChunk(s.chunks[idx].Path)
+	dodChunk, err := storage.LoadDODChunk(s.chunks[idx].Path)
 	if err != nil {
 		return nil, err
 	}
 
-	s.cache.Put(idx, points)
+	chunk, err := storage.DecompressChunk(dodChunk)
+	if err != nil {
+		return nil, err
+	}
 
-	return points, nil
+	s.cache.Put(idx, chunk.Points)
+
+	return chunk.Points, nil
 }
