@@ -26,7 +26,7 @@ func NewLog(dir string) (*Log, error) {
 		return nil, err
 	}
 
-	path := filepath.Join(dir, "wal", "000000002")
+	path := filepath.Join(dir, "wal.db")
 
 	aof, err := os.OpenFile(
 		path,

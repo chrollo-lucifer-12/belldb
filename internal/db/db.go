@@ -28,7 +28,7 @@ func NewDB() *DB {
 	return &DB{}
 }
 
-func (db *DB) Open(path string) error {
+func (db *DB) Open() error {
 
 	db.kv = NewKV()
 
@@ -37,7 +37,7 @@ func (db *DB) Open(path string) error {
 		return err
 	}
 
-	db.log, err = wal.NewLog(config.DATA_DIR)
+	db.log, err = wal.NewLog("data/wal/")
 	if err != nil {
 		return err
 	}
@@ -167,6 +167,7 @@ func (db *DB) recover(maxTs int64) error {
 
 		series.activeChunk.Points = append(series.activeChunk.Points, sp.Point)
 
+		//	fmt.Println(sp)
 	}
 
 	return nil
