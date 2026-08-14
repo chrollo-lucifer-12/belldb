@@ -32,8 +32,8 @@ func (db *DB) Open(path string) error {
 
 	db.kv = NewKV()
 
-	var err error
-	if err := db.recoverMetadata(); err != nil {
+	maxTs, err := db.recoverMetadata()
+	if err != nil {
 		return err
 	}
 
@@ -42,7 +42,7 @@ func (db *DB) Open(path string) error {
 		return err
 	}
 
-	return db.recover()
+	return db.recover(maxTs)
 }
 
 func (db *DB) Close() error {
@@ -76,14 +76,16 @@ func (db *DB) Range(metric string, start, end int64) []storage.Point {
 	return db.kv.Range(metric, start, end)
 }
 
-func (db *DB) recoverMetadata() error {
+func (db *DB) recoverMetadata() (int64, error) {
 	entries, err := os.ReadDir(config.DATA_DIR)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return -1, nil
 		}
-		return err
+		return -1, err
 	}
+
+	maxTs := int64(0)
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -103,7 +105,7 @@ func (db *DB) recoverMetadata() error {
 			if os.IsNotExist(err) {
 				continue
 			}
-			return err
+			return -1, err
 		}
 
 		series, ok := db.kv.Series[metric]
@@ -125,13 +127,14 @@ func (db *DB) recoverMetadata() error {
 					Path:  chunk.Path,
 				},
 			)
+			maxTs = max(maxTs, chunk.MaxTs)
 		}
 	}
 
-	return nil
+	return maxTs, nil
 }
 
-func (db *DB) recover() error {
+func (db *DB) recover(maxTs int64) error {
 	for {
 		sp, err := wal.DecodeRecord(db.log.Reader())
 
@@ -151,9 +154,19 @@ func (db *DB) recover() error {
 			series.activeChunk = &storage.Chunk{}
 
 			db.kv.Series[sp.Metric] = series
+
 		}
 
-		series.Append(storage.Point{Timestamp: sp.Point.Timestamp, Value: sp.Point.Value})
+		if sp.Point.Timestamp <= maxTs {
+			continue
+		}
+
+		if series.activeChunk == nil {
+			series.activeChunk = &storage.Chunk{}
+		}
+
+		series.activeChunk.Points = append(series.activeChunk.Points, sp.Point)
+
 	}
 
 	return nil
