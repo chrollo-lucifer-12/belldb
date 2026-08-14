@@ -2,8 +2,10 @@ package storage
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"math"
+	"os"
 )
 
 type Point struct {
@@ -51,25 +53,101 @@ func DecodePoints(r io.Reader) ([]Point, error) {
 		return nil, err
 	}
 
+	if pointsLen < 0 {
+		return nil, fmt.Errorf("invalid points length: %d", pointsLen)
+	}
+
 	points := make([]Point, pointsLen)
+	var buf [16]byte
 
-	for i := 0; i < int(pointsLen); i++ {
-
-		var timestamp int64
-
-		if err := binary.Read(r, binary.LittleEndian, &timestamp); err != nil {
-			return nil, err
-
-		}
-
-		var valueBits uint64
-
-		if err := binary.Read(r, binary.LittleEndian, &valueBits); err != nil {
+	for i := range points {
+		if _, err := io.ReadFull(r, buf[:]); err != nil {
 			return nil, err
 		}
 
-		points[i] = Point{Timestamp: timestamp, Value: math.Float64frombits(valueBits)}
+		points[i] = Point{
+			Timestamp: int64(binary.LittleEndian.Uint64(buf[0:8])),
+			Value: math.Float64frombits(
+				binary.LittleEndian.Uint64(buf[8:16]),
+			),
+		}
 	}
 
 	return points, nil
+}
+
+func FindPoint(path string, target int64, count int) (Point, error) {
+
+	fp, err := os.Open(path)
+	if err != nil {
+		return Point{}, err
+	}
+	defer fp.Close()
+
+	var buf [16]byte
+
+	low := 0
+	high := count - 1
+
+	for high >= low {
+		mid := (low + high) / 2
+
+		offset := int64(4 + mid*16)
+
+		if _, err := fp.Seek(offset, io.SeekStart); err != nil {
+			return Point{}, err
+		}
+
+		if _, err := io.ReadFull(fp, buf[:]); err != nil {
+			return Point{}, err
+		}
+
+		timestamp := int64(binary.LittleEndian.Uint64(buf[0:8]))
+
+		if timestamp < target {
+			low = mid + 1
+			continue
+		}
+
+		if timestamp > target {
+			high = mid - 1
+			continue
+		}
+
+		return Point{
+			Timestamp: timestamp,
+			Value: math.Float64frombits(
+				binary.LittleEndian.Uint64(buf[8:16]),
+			),
+		}, nil
+	}
+
+	return Point{}, fmt.Errorf("timestamp not found: %d", target)
+}
+
+func ReadPointAt(path string, index int) (Point, error) {
+	fp, err := os.Open(path)
+	if err != nil {
+		return Point{}, err
+	}
+	defer fp.Close()
+
+	offset := int64(4 + index*16)
+
+	if _, err := fp.Seek(offset, io.SeekStart); err != nil {
+		return Point{}, err
+	}
+
+	var buf [16]byte
+
+	if _, err := io.ReadFull(fp, buf[:]); err != nil {
+		return Point{}, err
+	}
+
+	return Point{
+		Timestamp: int64(binary.LittleEndian.Uint64(buf[0:8])),
+		Value: math.Float64frombits(
+			binary.LittleEndian.Uint64(buf[8:16]),
+		),
+	}, nil
 }

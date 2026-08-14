@@ -40,3 +40,22 @@ func BenchmarkDBPut(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkDBGet(b *testing.B) {
+	db := setupBenchmarkDB(b)
+
+	for i := 0; i < 10000; i++ {
+		if err := db.Put("cpu_usage", int64(i), float64(i)); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		_, err := db.Get("cpu_usage", int64(i%10000))
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}

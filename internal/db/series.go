@@ -47,20 +47,28 @@ func (s *Series) Get(timestamp int64) (float64, error) {
 
 	if chunkIdx == len(s.chunks) {
 		points = s.activeChunk.Points
-	} else {
-		points, err = storage.LoadChunk(s.chunks[chunkIdx].Path)
-		if err != nil {
-			return -1, err
+
+		idx := lowerBound(points, timestamp)
+
+		if idx < len(points) && points[idx].Timestamp == timestamp {
+			return points[idx].Value, nil
 		}
+
+		return -1, errTimestampNotFound(timestamp)
 	}
 
-	idx := lowerBound(points, timestamp)
+	chunk := s.chunks[chunkIdx]
 
-	if idx < len(points) && points[idx].Timestamp == timestamp {
-		return points[idx].Value, nil
+	point, err := storage.FindPoint(
+		chunk.Path,
+		timestamp,
+		chunk.Count,
+	)
+	if err != nil {
+		return -1, err
 	}
 
-	return -1, errTimestampNotFound(timestamp)
+	return point.Value, nil
 
 }
 

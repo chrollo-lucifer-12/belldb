@@ -9,6 +9,7 @@ import (
 type ChunkMetaData struct {
 	MinTs int64  `json:"min_ts"`
 	MaxTs int64  `json:"max_ts"`
+	Count int    `json:"count"`
 	Path  string `json:"path"`
 }
 
