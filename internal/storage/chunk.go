@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"os"
 )
 
 type Point struct {
@@ -26,6 +25,7 @@ type DODChunk struct {
 	firstTimestamp int64
 	lastTimestamp  int64
 	lastDelta      int64
+	lastValue      uint64
 }
 
 func DecompressChunk(dodChunk *DODChunk) (Chunk, error) {
@@ -55,11 +55,15 @@ func DecompressChunk(dodChunk *DODChunk) (Chunk, error) {
 		return Chunk{}, io.ErrUnexpectedEOF
 	}
 
-	value := math.Float64frombits(
-		binary.LittleEndian.Uint64(
-			dodChunk.values[:8],
-		),
+	if len(dodChunk.values) < 8 {
+		return Chunk{}, io.ErrUnexpectedEOF
+	}
+
+	lastValue := binary.LittleEndian.Uint64(
+		dodChunk.values[:8],
 	)
+
+	value := math.Float64frombits(lastValue)
 
 	chunk.Points = append(chunk.Points, Point{
 		Timestamp: firstTimestamp,
@@ -87,11 +91,13 @@ func DecompressChunk(dodChunk *DODChunk) (Chunk, error) {
 		return Chunk{}, io.ErrUnexpectedEOF
 	}
 
-	value = math.Float64frombits(
-		binary.LittleEndian.Uint64(
-			dodChunk.values[8:16],
-		),
+	xor := binary.LittleEndian.Uint64(
+		dodChunk.values[8:16],
 	)
+
+	lastValue ^= xor
+
+	value = math.Float64frombits(lastValue)
 
 	chunk.Points = append(chunk.Points, Point{
 		Timestamp: lastTimestamp,
@@ -118,11 +124,13 @@ func DecompressChunk(dodChunk *DODChunk) (Chunk, error) {
 			return Chunk{}, io.ErrUnexpectedEOF
 		}
 
-		value = math.Float64frombits(
-			binary.LittleEndian.Uint64(
-				dodChunk.values[valueOffset : valueOffset+8],
-			),
+		xor := binary.LittleEndian.Uint64(
+			dodChunk.values[valueOffset : valueOffset+8],
 		)
+
+		lastValue ^= xor
+
+		value = math.Float64frombits(lastValue)
 
 		chunk.Points = append(chunk.Points, Point{
 			Timestamp: timestamp,
@@ -156,8 +164,16 @@ func CompressChunk(chunk *Chunk) (*DODChunk, error) {
 
 	dod.timestamps = append(dod.timestamps, buf[:]...)
 
+	dod.lastValue = math.Float64bits(chunk.Points[0].Value)
+
+	binary.LittleEndian.PutUint64(
+		buf[:],
+		dod.lastValue,
+	)
+
+	dod.values = append(dod.values, buf[:]...)
+
 	if len(chunk.Points) == 1 {
-		dod.values = encodeValues(chunk.Points)
 		return dod, nil
 	}
 
@@ -186,28 +202,20 @@ func CompressChunk(chunk *Chunk) (*DODChunk, error) {
 
 		lastTimestamp = ts
 		lastDelta = delta
+
+		currValue := math.Float64bits(chunk.Points[i].Value)
+		xor := currValue ^ dod.lastValue
+
+		binary.LittleEndian.PutUint64(buf[:], xor)
+		dod.values = append(dod.values, buf[:]...)
+
+		dod.lastValue = currValue
 	}
 
 	dod.lastTimestamp = lastTimestamp
 	dod.lastDelta = lastDelta
 
-	dod.values = encodeValues(chunk.Points)
-
 	return dod, nil
-}
-
-func encodeValues(points []Point) []byte {
-	buf := make([]byte, 0, len(points)*8)
-
-	var tmp [8]byte
-
-	for _, p := range points {
-		binary.LittleEndian.PutUint64(tmp[:], math.Float64bits(p.Value))
-
-		buf = append(buf, tmp[:]...)
-	}
-
-	return buf
 }
 
 func EncodeDODChunk(w io.Writer, chunk DODChunk) error {
@@ -347,53 +355,4 @@ func DecodePoints(r io.Reader) ([]Point, error) {
 	}
 
 	return points, nil
-}
-
-func FindPoint(path string, target int64, count int) (Point, error) {
-
-	fp, err := os.Open(path)
-	if err != nil {
-		return Point{}, err
-	}
-	defer fp.Close()
-
-	var buf [16]byte
-
-	low := 0
-	high := count - 1
-
-	for high >= low {
-		mid := (low + high) / 2
-
-		offset := int64(4 + mid*16)
-
-		if _, err := fp.Seek(offset, io.SeekStart); err != nil {
-			return Point{}, err
-		}
-
-		if _, err := io.ReadFull(fp, buf[:]); err != nil {
-			return Point{}, err
-		}
-
-		timestamp := int64(binary.LittleEndian.Uint64(buf[0:8]))
-
-		if timestamp < target {
-			low = mid + 1
-			continue
-		}
-
-		if timestamp > target {
-			high = mid - 1
-			continue
-		}
-
-		return Point{
-			Timestamp: timestamp,
-			Value: math.Float64frombits(
-				binary.LittleEndian.Uint64(buf[8:16]),
-			),
-		}, nil
-	}
-
-	return Point{}, fmt.Errorf("timestamp not found: %d", target)
 }
