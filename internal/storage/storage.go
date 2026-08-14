@@ -20,7 +20,7 @@ func LoadChunk(path string) ([]Point, error) {
 
 }
 
-func Flush(metric string, points []Point) error {
+func Flush(metric string, points []Point) (ChunkMetaData, error) {
 
 	minTs := points[0].Timestamp
 	maxTs := points[len(points)-1].Timestamp
@@ -28,25 +28,31 @@ func Flush(metric string, points []Point) error {
 	dir := filepath.Join(config.DATA_DIR, metric)
 
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
+		return ChunkMetaData{}, err
 	}
 
 	timestampStr := strconv.Itoa(int(minTs))
 	path := filepath.Join(dir, timestampStr)
 
-	if err := SaveMeta(ChunkMetaData{MinTs: minTs, MaxTs: maxTs, Path: path}, dir); err != nil {
-		return err
-	}
+	meta := ChunkMetaData{MinTs: minTs, MaxTs: maxTs, Path: path}
 
 	fp, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil {
-		return err
+		return ChunkMetaData{}, err
 	}
 	defer fp.Close()
 
 	if err := EncodePoints(fp, points); err != nil {
-		return err
+		return ChunkMetaData{}, err
 	}
 
-	return fp.Sync()
+	if err := fp.Sync(); err != nil {
+		return ChunkMetaData{}, err
+	}
+
+	if err := SaveMeta(meta, dir); err != nil {
+		return ChunkMetaData{}, err
+	}
+
+	return meta, nil
 }

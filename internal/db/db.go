@@ -56,14 +56,14 @@ func (db *DB) Put(metric string, timestamp int64, value float64) error {
 		return err
 	}
 
-	flushed, err := db.kv.Put(metric, timestamp, value)
+	_, err = db.kv.Put(metric, timestamp, value)
 	if err != nil {
 		return err
 	}
 
-	if flushed {
-		return db.log.Checkpoint()
-	}
+	// if flushed {
+	// 	return db.log.Checkpoint()
+	// }
 
 	return nil
 }
