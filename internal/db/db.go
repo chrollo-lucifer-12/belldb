@@ -154,7 +154,7 @@ func (db *DB) recover(maxTs int64) error {
 		series, ok := db.kv.Series[sp.Metric]
 
 		if !ok {
-			series = &Series{name: sp.Metric}
+			series = &Series{name: sp.Metric, cache: NewChunkCache(16)}
 
 			series.activeChunk = &storage.Chunk{
 				Points: make([]storage.Point, 0, ChunkSize),

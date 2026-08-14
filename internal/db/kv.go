@@ -27,7 +27,7 @@ func (kv *KV) Put(metric string, timestamp int64, value float64) (bool, error) {
 			return false, err
 		}
 
-		series = &Series{name: metric}
+		series = &Series{name: metric, cache: NewChunkCache(16)}
 		kv.Series[metric] = series
 	}
 

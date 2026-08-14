@@ -124,30 +124,3 @@ func FindPoint(path string, target int64, count int) (Point, error) {
 
 	return Point{}, fmt.Errorf("timestamp not found: %d", target)
 }
-
-func ReadPointAt(path string, index int) (Point, error) {
-	fp, err := os.Open(path)
-	if err != nil {
-		return Point{}, err
-	}
-	defer fp.Close()
-
-	offset := int64(4 + index*16)
-
-	if _, err := fp.Seek(offset, io.SeekStart); err != nil {
-		return Point{}, err
-	}
-
-	var buf [16]byte
-
-	if _, err := io.ReadFull(fp, buf[:]); err != nil {
-		return Point{}, err
-	}
-
-	return Point{
-		Timestamp: int64(binary.LittleEndian.Uint64(buf[0:8])),
-		Value: math.Float64frombits(
-			binary.LittleEndian.Uint64(buf[8:16]),
-		),
-	}, nil
-}

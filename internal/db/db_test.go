@@ -59,3 +59,26 @@ func BenchmarkDBGet(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkDBRange(b *testing.B) {
+	db := setupBenchmarkDB(b)
+
+	const points = 10000
+
+	for i := 0; i < points; i++ {
+		if err := db.Put("cpu_usage", int64(i), float64(i)); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		result := db.Range("cpu_usage", 2500, 7500)
+
+		if len(result) != 5000 {
+			b.Fatalf("expected 5000 points, got %d", len(result))
+		}
+	}
+
+}

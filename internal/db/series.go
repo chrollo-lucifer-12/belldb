@@ -8,6 +8,7 @@ type Series struct {
 	activeChunk *storage.Chunk
 	name        string
 	chunks      []storage.ChunkMetaData
+	cache       *Cache
 }
 
 func (s *Series) Append(p storage.Point) (flushed bool, err error) {
@@ -73,10 +74,21 @@ func (s *Series) Get(timestamp int64) (float64, error) {
 }
 
 func (s *Series) Range(start, end int64) []storage.Point {
-	var result []storage.Point
 
 	startChunk := s.findChunk(start)
 	endChunk := s.findChunk(end - 1)
+
+	capacity := 0
+
+	for i := startChunk; i <= endChunk; i++ {
+		if i == len(s.chunks) {
+			capacity += len(s.activeChunk.Points)
+		} else {
+			capacity += s.chunks[i].Count
+		}
+	}
+
+	result := make([]storage.Point, 0, capacity)
 
 	if startChunk == -1 {
 		startChunk = 0
@@ -94,7 +106,7 @@ func (s *Series) Range(start, end int64) []storage.Point {
 		if startChunk == len(s.chunks) {
 			points = s.activeChunk.Points
 		} else {
-			points, err = storage.LoadChunk(s.chunks[startChunk].Path)
+			points, err = s.loadChunk(startChunk)
 			if err != nil {
 				return nil
 			}
@@ -155,4 +167,19 @@ func (s *Series) findChunk(timestamp int64) int {
 	}
 
 	return -1
+}
+
+func (s *Series) loadChunk(idx int) ([]storage.Point, error) {
+	if points, ok := s.cache.Get(idx); ok {
+		return points, nil
+	}
+
+	points, err := storage.LoadChunk(s.chunks[idx].Path)
+	if err != nil {
+		return nil, err
+	}
+
+	s.cache.Put(idx, points)
+
+	return points, nil
 }
