@@ -30,7 +30,7 @@ func NewDB() *DB {
 
 func (db *DB) Open() error {
 
-	db.kv = NewKV()
+	db.kv = NewKV(5000)
 
 	maxTs, err := db.recoverMetadata()
 	if err != nil {
@@ -56,21 +56,13 @@ func (db *DB) Close() error {
 
 func (db *DB) Put(metric string, timestamp int64, value float64) error {
 
-	err := db.log.Write(wal.EncodeRecord(wal.SavePoint{Metric: metric, Point: storage.Point{Timestamp: timestamp, Value: value}}))
-	if err != nil {
-		return err
+	sp := wal.SavePoint{
+		Metric: metric,
+		Point:  storage.Point{Timestamp: timestamp, Value: value},
 	}
+	db.log.Append(sp)
 
-	flushed, err := db.kv.Put(metric, timestamp, value)
-	if err != nil {
-		return err
-	}
-
-	if flushed {
-		return db.log.Sync()
-	}
-
-	return nil
+	return db.kv.Put(metric, timestamp, value)
 }
 
 func (db *DB) Get(metric string, timestamp int64) (float64, error) {

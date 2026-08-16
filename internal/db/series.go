@@ -2,7 +2,7 @@ package db
 
 import "github.com/belldb/internal/storage"
 
-const ChunkSize = 1000
+const ChunkSize = 5000
 
 type Series struct {
 	activeChunk *storage.Chunk
@@ -18,12 +18,12 @@ func (s *Series) FlushChunk() (bool, error) {
 
 	dodChunk, err := storage.CompressChunk(s.activeChunk)
 	if err != nil {
-		return false, nil
+		return false, err
 	}
 
 	meta, err := storage.FlushDODChunk(s.name, dodChunk)
 	if err != nil {
-		return false, nil
+		return false, err
 	}
 
 	s.chunks = append(s.chunks, meta)
@@ -35,19 +35,19 @@ func (s *Series) FlushChunk() (bool, error) {
 	return true, nil
 }
 
-func (s *Series) Append(p storage.Point) (flushed bool, err error) {
-	if s.activeChunk == nil {
+func (s *Series) Append(p storage.Point) (fullChunk *storage.Chunk) {
+
+	s.activeChunk.Points =
+		append(s.activeChunk.Points, p)
+
+	if len(s.activeChunk.Points) >= ChunkSize {
+		fullChunk = s.activeChunk
 		s.activeChunk = &storage.Chunk{
 			Points: make([]storage.Point, 0, ChunkSize),
 		}
 	}
 
-	s.activeChunk.Points =
-		append(s.activeChunk.Points, p)
-
-	flushed, err = s.FlushChunk()
-
-	return flushed, nil
+	return fullChunk
 }
 
 func (s *Series) Get(timestamp int64) (float64, error) {

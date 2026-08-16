@@ -8,30 +8,81 @@ import (
 	"github.com/belldb/internal/storage"
 )
 
+type FlushTask struct {
+	SeriesName string
+	Chunk      *storage.Chunk
+}
+
 type KV struct {
-	Series map[string]*Series
+	Series     map[string]*Series
+	flushQueue chan *FlushTask
 }
 
-func NewKV() *KV {
-	return &KV{Series: make(map[string]*Series)}
+func NewKV(flushQueueSize int) *KV {
+	kv := &KV{Series: make(map[string]*Series), flushQueue: make(chan *FlushTask, flushQueueSize)}
+	go kv.startFlushWorkers(8)
+
+	return kv
 }
 
-func (kv *KV) Put(metric string, timestamp int64, value float64) (bool, error) {
-	series, ok := kv.Series[metric]
+func (kv *KV) startFlushWorkers(numWorkers int) {
+	for i := 0; i < numWorkers; i++ {
+		go func() {
+			for task := range kv.flushQueue {
+				dodChunk, err := storage.CompressChunk(task.Chunk)
+				if err != nil {
+					continue
+				}
 
-	if !ok {
+				dir := filepath.Join(config.DATA_DIR, task.SeriesName)
+				_ = os.MkdirAll(dir, 0755)
 
-		dir := filepath.Join(config.DATA_DIR, metric)
+				meta, err := storage.FlushDODChunk(task.SeriesName, dodChunk)
+				if err != nil {
+					continue
+				}
 
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return false, err
-		}
+				s := kv.GetOrCreateSeries(task.SeriesName)
 
-		series = &Series{name: metric, cache: NewChunkCache(16)}
-		kv.Series[metric] = series
+				s.chunks = append(s.chunks, meta)
+			}
+		}()
+	}
+}
+
+func (kv *KV) GetOrCreateSeries(metric string) *Series {
+	s, ok := kv.Series[metric]
+
+	if ok {
+		return s
 	}
 
-	return series.Append(storage.Point{Timestamp: timestamp, Value: value})
+	if s, ok = kv.Series[metric]; ok {
+		return s
+	}
+
+	s = &Series{
+		name: metric,
+		activeChunk: &storage.Chunk{
+			Points: make([]storage.Point, 0, ChunkSize),
+		},
+	}
+	kv.Series[metric] = s
+	return s
+}
+
+func (kv *KV) Put(metric string, timestamp int64, value float64) error {
+	series := kv.GetOrCreateSeries(metric)
+
+	fullChunk := series.Append(storage.Point{Timestamp: timestamp, Value: value})
+	if fullChunk != nil {
+		kv.flushQueue <- &FlushTask{
+			SeriesName: metric,
+			Chunk:      fullChunk,
+		}
+	}
+
+	return nil
 }
 
 func (kv *KV) Get(metric string, timestamp int64) (float64, error) {

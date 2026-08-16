@@ -2,21 +2,29 @@ package wal
 
 import (
 	"bufio"
-	"encoding/binary"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
+	"time"
 
 	"github.com/belldb/internal/config"
 	"github.com/belldb/internal/storage"
 )
 
 type Log struct {
-	dir          string
-	aof          *os.File
-	buf          *bufio.Writer
-	checkpointID uint64
+	dir string
+
+	aof *os.File
+	buf *bufio.Writer
+
+	queue chan SavePoint
+	done  chan struct{}
+
+	wg sync.WaitGroup
+
+	errMu sync.Mutex
+	err   error
 }
 
 type SavePoint struct {
@@ -39,24 +47,50 @@ func NewLog() (*Log, error) {
 		return nil, err
 	}
 
-	return &Log{
-		dir: dir,
-		aof: aof,
-		buf: bufio.NewWriterSize(aof, 64*1024),
-	}, nil
+	l := &Log{
+		dir:   dir,
+		aof:   aof,
+		buf:   bufio.NewWriterSize(aof, 1024*1024),
+		queue: make(chan SavePoint, 8192),
+		done:  make(chan struct{}),
+	}
+
+	l.wg.Add(1)
+	go l.startBackgroundSync(10 * time.Millisecond)
+
+	return l, nil
 }
 
 func (log *Log) Close() error {
+	close(log.done)
+
+	log.wg.Wait()
+
+	if err := log.getError(); err != nil {
+		log.aof.Close()
+		return err
+	}
+
+	if err := log.Sync(); err != nil {
+		log.aof.Close()
+		return err
+	}
+
 	return log.aof.Close()
+}
+
+func (log *Log) Append(sp SavePoint) error {
+	select {
+	case log.queue <- sp:
+		return nil
+	case <-log.done:
+		return os.ErrClosed
+	}
 }
 
 func (log *Log) Write(data []byte) error {
 	_, err := log.buf.Write(data)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 func (log *Log) Read(buf []byte, offset int64) error {
@@ -76,10 +110,6 @@ func (log *Log) Reader() io.Reader {
 	return log.aof
 }
 
-func (log *Log) Offset() (int64, error) {
-	return log.aof.Seek(0, io.SeekEnd)
-}
-
 func (log *Log) Sync() error {
 	if err := log.buf.Flush(); err != nil {
 		return err
@@ -87,60 +117,75 @@ func (log *Log) Sync() error {
 	return log.aof.Sync()
 }
 
-func (log *Log) Checkpoint() error {
-	log.checkpointID++
+func (log *Log) startBackgroundSync(interval time.Duration) {
+	defer log.wg.Done()
 
-	offset, err := log.Offset()
-	if err != nil {
-		log.checkpointID--
-		return err
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-log.done:
+			if err := log.drain(); err != nil {
+				log.setError(err)
+				return
+			}
+
+			if err := log.Sync(); err != nil {
+				log.setError(err)
+			}
+
+			return
+
+		case sp := <-log.queue:
+			if err := log.Write(EncodeRecord(sp)); err != nil {
+				log.setError(err)
+				return
+			}
+
+			for i := 0; i < 256; i++ {
+				select {
+				case sp := <-log.queue:
+					if err := log.Write(EncodeRecord(sp)); err != nil {
+						log.setError(err)
+						return
+					}
+				default:
+					i = 256
+				}
+			}
+
+		case <-ticker.C:
+			if err := log.Sync(); err != nil {
+				log.setError(err)
+				return
+			}
+		}
 	}
+}
 
-	checkpointDir := filepath.Join(
-		log.dir,
-		fmt.Sprintf("checkpoint.%08d", log.checkpointID),
-	)
-
-	if err := os.MkdirAll(checkpointDir, 0755); err != nil {
-		log.checkpointID--
-		return err
+func (log *Log) drain() error {
+	for {
+		select {
+		case sp := <-log.queue:
+			if err := log.Write(EncodeRecord(sp)); err != nil {
+				return err
+			}
+		default:
+			return nil
+		}
 	}
+}
 
-	checkpointPath := filepath.Join(
-		checkpointDir,
-		"00000000",
-	)
+func (log *Log) setError(err error) {
+	log.errMu.Lock()
+	log.err = err
+	log.errMu.Unlock()
+}
 
-	fp, err := os.OpenFile(
-		checkpointPath,
-		os.O_WRONLY|os.O_CREATE|os.O_TRUNC,
-		0644,
-	)
-	if err != nil {
-		log.checkpointID--
-		return err
-	}
+func (log *Log) getError() error {
+	log.errMu.Lock()
+	defer log.errMu.Unlock()
 
-	if err := binary.Write(
-		fp,
-		binary.LittleEndian,
-		offset,
-	); err != nil {
-		fp.Close()
-		log.checkpointID--
-		return err
-	}
-
-	if err := fp.Sync(); err != nil {
-		fp.Close()
-		log.checkpointID--
-		return err
-	}
-
-	if err := fp.Close(); err != nil {
-		log.checkpointID--
-		return err
-	}
-
-	return nil
+	return log.err
 }
