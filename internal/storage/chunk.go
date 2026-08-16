@@ -151,10 +151,15 @@ func CompressChunk(chunk *Chunk) (*DODChunk, error) {
 		return nil, nil
 	}
 
+	count := len(chunk.Points)
+
 	dod := &DODChunk{
 		count:          len(chunk.Points),
 		firstTimestamp: chunk.Points[0].Timestamp,
-		lastTimestamp:  chunk.Points[len(chunk.Points)-1].Timestamp,
+		lastTimestamp:  chunk.Points[count-1].Timestamp,
+
+		timestamps: make([]byte, 0, count*8),
+		values:     make([]byte, 0, count*8),
 	}
 
 	var buf [8]byte

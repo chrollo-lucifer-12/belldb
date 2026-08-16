@@ -8,7 +8,8 @@ type Series struct {
 	activeChunk *storage.Chunk
 	name        string
 	chunks      []storage.ChunkMetaData
-	cache       *Cache
+
+	cache *Cache
 }
 
 func (s *Series) FlushChunk() (bool, error) {
@@ -42,12 +43,15 @@ func (s *Series) Append(p storage.Point) (fullChunk *storage.Chunk) {
 
 	if len(s.activeChunk.Points) >= ChunkSize {
 		fullChunk = s.activeChunk
+
 		s.activeChunk = &storage.Chunk{
 			Points: make([]storage.Point, 0, ChunkSize),
 		}
+
+		return fullChunk
 	}
 
-	return fullChunk
+	return nil
 }
 
 func (s *Series) Get(timestamp int64) (float64, error) {

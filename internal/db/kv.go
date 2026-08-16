@@ -3,6 +3,7 @@ package db
 import (
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/belldb/internal/config"
 	"github.com/belldb/internal/storage"
@@ -16,38 +17,14 @@ type FlushTask struct {
 type KV struct {
 	Series     map[string]*Series
 	flushQueue chan *FlushTask
+
+	wg sync.WaitGroup
 }
 
 func NewKV(flushQueueSize int) *KV {
 	kv := &KV{Series: make(map[string]*Series), flushQueue: make(chan *FlushTask, flushQueueSize)}
-	go kv.startFlushWorkers(8)
-
+	go kv.startWorkers(1)
 	return kv
-}
-
-func (kv *KV) startFlushWorkers(numWorkers int) {
-	for i := 0; i < numWorkers; i++ {
-		go func() {
-			for task := range kv.flushQueue {
-				dodChunk, err := storage.CompressChunk(task.Chunk)
-				if err != nil {
-					continue
-				}
-
-				dir := filepath.Join(config.DATA_DIR, task.SeriesName)
-				_ = os.MkdirAll(dir, 0755)
-
-				meta, err := storage.FlushDODChunk(task.SeriesName, dodChunk)
-				if err != nil {
-					continue
-				}
-
-				s := kv.GetOrCreateSeries(task.SeriesName)
-
-				s.chunks = append(s.chunks, meta)
-			}
-		}()
-	}
 }
 
 func (kv *KV) GetOrCreateSeries(metric string) *Series {
@@ -57,8 +34,9 @@ func (kv *KV) GetOrCreateSeries(metric string) *Series {
 		return s
 	}
 
-	if s, ok = kv.Series[metric]; ok {
-		return s
+	dir := filepath.Join(config.DATA_DIR, metric)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return nil
 	}
 
 	s = &Series{
@@ -75,7 +53,10 @@ func (kv *KV) Put(metric string, timestamp int64, value float64) error {
 	series := kv.GetOrCreateSeries(metric)
 
 	fullChunk := series.Append(storage.Point{Timestamp: timestamp, Value: value})
+
 	if fullChunk != nil {
+		kv.wg.Add(1)
+
 		kv.flushQueue <- &FlushTask{
 			SeriesName: metric,
 			Chunk:      fullChunk,
@@ -101,4 +82,34 @@ func (kv *KV) Range(metric string, start, end int64) []storage.Point {
 	}
 
 	return series.Range(start, end)
+}
+
+func (kv *KV) startWorkers(numWorkers int) {
+	for i := 0; i < numWorkers; i++ {
+		go func() {
+			for task := range kv.flushQueue {
+				dodChunk, err := storage.CompressChunk(task.Chunk)
+				if err != nil {
+					continue
+				}
+
+				meta, err := storage.FlushDODChunk(
+					task.SeriesName,
+					dodChunk,
+				)
+				if err != nil {
+					continue
+				}
+
+				kv.wg.Done()
+
+				series := kv.GetOrCreateSeries(task.SeriesName)
+				series.chunks = append(series.chunks, meta)
+			}
+		}()
+	}
+}
+
+func (kv *KV) WaitForFlush() {
+	kv.wg.Wait()
 }

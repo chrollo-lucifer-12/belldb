@@ -120,6 +120,8 @@ func (log *Log) Sync() error {
 func (log *Log) startBackgroundSync(interval time.Duration) {
 	defer log.wg.Done()
 
+	var buf []byte
+
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -138,7 +140,9 @@ func (log *Log) startBackgroundSync(interval time.Duration) {
 			return
 
 		case sp := <-log.queue:
-			if err := log.Write(EncodeRecord(sp)); err != nil {
+			buf = EncodeRecord(buf, sp)
+
+			if err := log.Write(buf); err != nil {
 				log.setError(err)
 				return
 			}
@@ -146,7 +150,9 @@ func (log *Log) startBackgroundSync(interval time.Duration) {
 			for i := 0; i < 256; i++ {
 				select {
 				case sp := <-log.queue:
-					if err := log.Write(EncodeRecord(sp)); err != nil {
+					buf = EncodeRecord(buf, sp)
+
+					if err := log.Write(buf); err != nil {
 						log.setError(err)
 						return
 					}
@@ -165,10 +171,15 @@ func (log *Log) startBackgroundSync(interval time.Duration) {
 }
 
 func (log *Log) drain() error {
+
+	var buf []byte
+
 	for {
 		select {
 		case sp := <-log.queue:
-			if err := log.Write(EncodeRecord(sp)); err != nil {
+			buf = EncodeRecord(buf, sp)
+
+			if err := log.Write(buf); err != nil {
 				return err
 			}
 		default:

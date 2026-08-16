@@ -28,17 +28,23 @@ func setupBenchmarkDB(b *testing.B) *DB {
 func BenchmarkDBPut(b *testing.B) {
 	db := setupBenchmarkDB(b)
 
+	metric := "cpu_usage"
+
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
 		if err := db.Put(
-			"cpu_usage",
+			metric,
 			int64(i),
 			float64(i),
 		); err != nil {
 			b.Fatal(err)
 		}
 	}
+
+	//	b.StopTimer()
+
+	db.kv.WaitForFlush()
 }
 
 func BenchmarkDBGet(b *testing.B) {

@@ -27,13 +27,18 @@ func Encode(p SavePoint) []byte {
 	return buf.Bytes()
 }
 
-func EncodeRecord(sp SavePoint) []byte {
+func EncodeRecord(buf []byte, sp SavePoint) []byte {
 
 	metricLen := len(sp.Metric)
 
 	payloadLen := 2 + metricLen + 4 + 8 + 8
+	recordLen := 4 + payloadLen + 4
 
-	buf := make([]byte, 4+payloadLen+4)
+	if cap(buf) < recordLen {
+		buf = make([]byte, recordLen)
+	} else {
+		buf = buf[:recordLen]
+	}
 
 	binary.LittleEndian.PutUint32(
 		buf[0:4],
