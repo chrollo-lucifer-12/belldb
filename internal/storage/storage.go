@@ -20,14 +20,22 @@ func LoadChunk(path string) ([]Point, error) {
 	return DecodePoints(fp)
 }
 
-func LoadDODChunk(path string) (*DODChunk, error) {
+func LoadDODChunk(
+	path string,
+	timestamps *[]byte,
+	values *[]byte,
+) (*DODChunk, error) {
 	fp, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer fp.Close()
 
-	return DecodeDODChunk(fp)
+	return DecodeDODChunk(
+		fp,
+		*timestamps,
+		*values,
+	)
 }
 
 func FlushDODChunk(metric string, chunk *DODChunk) (ChunkMetaData, error) {

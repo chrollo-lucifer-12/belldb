@@ -9,31 +9,10 @@ type Series struct {
 	name        string
 	chunks      []storage.ChunkMetaData
 
+	decodeTimestamps []byte
+	decodeValues     []byte
+
 	cache *Cache
-}
-
-func (s *Series) FlushChunk() (bool, error) {
-	if len(s.activeChunk.Points) < ChunkSize {
-		return false, nil
-	}
-
-	dodChunk, err := storage.CompressChunk(s.activeChunk)
-	if err != nil {
-		return false, err
-	}
-
-	meta, err := storage.FlushDODChunk(s.name, dodChunk)
-	if err != nil {
-		return false, err
-	}
-
-	s.chunks = append(s.chunks, meta)
-
-	s.activeChunk = &storage.Chunk{
-		Points: make([]storage.Point, 0, ChunkSize),
-	}
-
-	return true, nil
 }
 
 func (s *Series) Append(p storage.Point) (fullChunk *storage.Chunk) {
@@ -185,7 +164,7 @@ func (s *Series) loadChunk(idx int) ([]storage.Point, error) {
 		return points, nil
 	}
 
-	dodChunk, err := storage.LoadDODChunk(s.chunks[idx].Path)
+	dodChunk, err := storage.LoadDODChunk(s.chunks[idx].Path, &s.decodeTimestamps, &s.decodeValues)
 	if err != nil {
 		return nil, err
 	}

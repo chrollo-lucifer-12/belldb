@@ -44,6 +44,7 @@ func (kv *KV) GetOrCreateSeries(metric string) *Series {
 		activeChunk: &storage.Chunk{
 			Points: make([]storage.Point, 0, ChunkSize),
 		},
+		cache: NewChunkCache(16),
 	}
 	kv.Series[metric] = s
 	return s
@@ -111,5 +112,28 @@ func (kv *KV) startWorkers(numWorkers int) {
 }
 
 func (kv *KV) WaitForFlush() {
+	kv.wg.Wait()
+}
+
+func (kv *KV) Flush() {
+	for metric, series := range kv.Series {
+		if len(series.activeChunk.Points) == 0 {
+			continue
+		}
+
+		kv.wg.Add(1)
+
+		kv.flushQueue <- &FlushTask{
+			SeriesName: metric,
+			Chunk:      series.activeChunk,
+		}
+
+		series.activeChunk = &storage.Chunk{
+			Points: make([]storage.Point, 0, ChunkSize),
+		}
+	}
+
+	close(kv.flushQueue)
+
 	kv.wg.Wait()
 }

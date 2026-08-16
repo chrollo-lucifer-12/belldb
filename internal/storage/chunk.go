@@ -30,7 +30,7 @@ type DODChunk struct {
 
 func DecompressChunk(dodChunk *DODChunk) (Chunk, error) {
 	chunk := Chunk{
-		Points: make([]Point, 0, dodChunk.count),
+		Points: make([]Point, dodChunk.count),
 	}
 
 	if dodChunk.count == 0 {
@@ -63,10 +63,10 @@ func DecompressChunk(dodChunk *DODChunk) (Chunk, error) {
 
 	valueOffset += 8
 
-	chunk.Points = append(chunk.Points, Point{
+	chunk.Points[0] = Point{
 		Timestamp: firstTimestamp,
 		Value:     math.Float64frombits(lastValue),
-	})
+	}
 
 	if dodChunk.count == 1 {
 		return chunk, nil
@@ -98,10 +98,10 @@ func DecompressChunk(dodChunk *DODChunk) (Chunk, error) {
 
 	lastValue ^= xor
 
-	chunk.Points = append(chunk.Points, Point{
+	chunk.Points[1] = Point{
 		Timestamp: lastTimestamp,
 		Value:     math.Float64frombits(lastValue),
-	})
+	}
 
 	for i := 2; i < dodChunk.count; i++ {
 
@@ -134,10 +134,10 @@ func DecompressChunk(dodChunk *DODChunk) (Chunk, error) {
 
 		lastValue ^= xor
 
-		chunk.Points = append(chunk.Points, Point{
+		chunk.Points[i] = Point{
 			Timestamp: timestamp,
 			Value:     math.Float64frombits(lastValue),
-		})
+		}
 
 		lastTimestamp = timestamp
 		lastDelta = delta
@@ -258,7 +258,7 @@ func EncodeDODChunk(w io.Writer, chunk DODChunk) error {
 	return nil
 }
 
-func DecodeDODChunk(r io.Reader) (*DODChunk, error) {
+func DecodeDODChunk(r io.Reader, timestamps []byte, values []byte) (*DODChunk, error) {
 	var (
 		pointsCount    int32
 		firstTimestamp int64
@@ -286,7 +286,11 @@ func DecodeDODChunk(r io.Reader) (*DODChunk, error) {
 		return nil, fmt.Errorf("invalid timestamps len")
 	}
 
-	timestamps := make([]byte, timestampsLen)
+	if cap(timestamps) < int(timestampsLen) {
+		timestamps = make([]byte, timestampsLen)
+	} else {
+		timestamps = timestamps[:timestampsLen]
+	}
 
 	if _, err := io.ReadFull(r, timestamps); err != nil {
 		return nil, fmt.Errorf("read timestamps: %w", err)
@@ -296,7 +300,11 @@ func DecodeDODChunk(r io.Reader) (*DODChunk, error) {
 		return nil, fmt.Errorf("read values length: %w", err)
 	}
 
-	values := make([]byte, valuesLen)
+	if cap(values) < int(valuesLen) {
+		values = make([]byte, valuesLen)
+	} else {
+		values = values[:valuesLen]
+	}
 
 	if _, err := io.ReadFull(r, values); err != nil {
 		return nil, fmt.Errorf("read values: %w", err)

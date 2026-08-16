@@ -46,11 +46,7 @@ func (db *DB) Open() error {
 }
 
 func (db *DB) Close() error {
-
-	for k, v := range db.kv.Series {
-		storage.SaveMeta(storage.Metadata{Chunks: v.chunks}, config.DATA_DIR+k)
-	}
-
+	//	db.kv.Flush()
 	return db.log.Close()
 }
 
