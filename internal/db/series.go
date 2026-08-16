@@ -64,9 +64,16 @@ func (s *Series) Get(timestamp int64) (float64, error) {
 }
 
 func (s *Series) Range(start, end int64) []storage.Point {
-
 	startChunk := s.findChunk(start)
 	endChunk := s.findChunk(end - 1)
+
+	if startChunk == -1 {
+		return nil
+	}
+
+	if endChunk == -1 {
+		return nil
+	}
 
 	capacity := 0
 
@@ -80,34 +87,33 @@ func (s *Series) Range(start, end int64) []storage.Point {
 
 	result := make([]storage.Point, 0, capacity)
 
-	if startChunk == -1 {
-		startChunk = 0
-	}
-
-	if endChunk == -1 {
-		endChunk = len(s.chunks)
-	}
-
-	for startChunk <= endChunk {
-
+	for i := startChunk; i <= endChunk; i++ {
 		var points []storage.Point
-		var err error
 
-		if startChunk == len(s.chunks) {
+		if i == len(s.chunks) {
 			points = s.activeChunk.Points
 		} else {
-			points, err = s.loadChunk(startChunk)
+			var err error
+			points, err = s.loadChunk(i)
 			if err != nil {
 				return nil
 			}
 		}
 
-		l := lowerBound(points, start)
-		r := lowerBound(points, end)
+		l := 0
+		r := len(points)
 
-		result = append(result, points[l:r]...)
+		if i == startChunk {
+			l = lowerBound(points, start)
+		}
 
-		startChunk++
+		if i == endChunk {
+			r = lowerBound(points, end)
+		}
+
+		if l < r {
+			result = append(result, points[l:r]...)
+		}
 	}
 
 	return result
@@ -131,6 +137,12 @@ func lowerBound(points []storage.Point, timestamp int64) int {
 }
 
 func (s *Series) findChunk(timestamp int64) int {
+	if len(s.chunks) == 0 {
+		if s.activeChunk != nil && len(s.activeChunk.Points) > 0 {
+			return len(s.chunks)
+		}
+		return -1
+	}
 
 	low, high := 0, len(s.chunks)-1
 
@@ -147,16 +159,19 @@ func (s *Series) findChunk(timestamp int64) int {
 		}
 	}
 
-	if s.activeChunk != nil && len(s.activeChunk.Points) > 0 {
-		points := s.activeChunk.Points
-
-		if points[0].Timestamp <= timestamp &&
-			timestamp <= points[len(points)-1].Timestamp {
-			return len(s.chunks)
-		}
+	if low == 0 {
+		return 0
 	}
 
-	return -1
+	if low == len(s.chunks) {
+		if s.activeChunk != nil && len(s.activeChunk.Points) > 0 {
+			return len(s.chunks)
+		}
+
+		return len(s.chunks) - 1
+	}
+
+	return low
 }
 
 func (s *Series) loadChunk(idx int) ([]storage.Point, error) {

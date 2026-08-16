@@ -162,7 +162,7 @@ func (db *DB) recover(maxTs int64) error {
 
 		series.activeChunk.Points = append(series.activeChunk.Points, sp.Point)
 
-		//	fmt.Println(sp)
+		fmt.Println(sp)
 	}
 
 	return nil
