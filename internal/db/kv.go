@@ -12,11 +12,14 @@ import (
 type FlushTask struct {
 	SeriesName string
 	Chunk      *storage.Chunk
+	lsn        uint64
 }
 
 type KV struct {
 	Series     map[string]*Series
 	flushQueue chan *FlushTask
+
+	onFlush func(uint64)
 
 	wg sync.WaitGroup
 }
@@ -50,7 +53,7 @@ func (kv *KV) GetOrCreateSeries(metric string) *Series {
 	return s
 }
 
-func (kv *KV) Put(metric string, timestamp int64, value float64) error {
+func (kv *KV) Put(metric string, timestamp int64, value float64, lsn uint64) error {
 	series := kv.GetOrCreateSeries(metric)
 
 	fullChunk := series.Append(storage.Point{Timestamp: timestamp, Value: value})
@@ -61,6 +64,7 @@ func (kv *KV) Put(metric string, timestamp int64, value float64) error {
 		kv.flushQueue <- &FlushTask{
 			SeriesName: metric,
 			Chunk:      fullChunk,
+			lsn:        lsn,
 		}
 	}
 
@@ -102,6 +106,7 @@ func (kv *KV) startWorkers(numWorkers int) {
 					continue
 				}
 
+				kv.onFlush(task.lsn)
 				kv.wg.Done()
 
 				series := kv.GetOrCreateSeries(task.SeriesName)

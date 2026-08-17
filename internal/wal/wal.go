@@ -12,11 +12,14 @@ import (
 	"github.com/belldb/internal/storage"
 )
 
-type Log struct {
-	dir string
+const WalLimit = 100
 
-	aof *os.File
-	buf *bufio.Writer
+type Log struct {
+	aof      *os.File
+	buf      *bufio.Writer
+	nrecords int
+
+	segmentID int
 
 	queue chan SavePoint
 	done  chan struct{}
@@ -28,37 +31,49 @@ type Log struct {
 }
 
 type SavePoint struct {
+	LSN    uint64
 	Metric string
 	Point  storage.Point
 }
 
-func NewLog() (*Log, error) {
+func NewLog() *Log {
 
-	dir := config.LOG_DIR
+	return &Log{
+		segmentID: 0,
+		nrecords:  0,
+		queue:     make(chan SavePoint, 8192),
+		done:      make(chan struct{}),
+	}
 
-	path := filepath.Join(dir, "wal.db")
+}
 
-	aof, err := os.OpenFile(
-		path,
-		os.O_CREATE|os.O_RDWR|os.O_APPEND,
-		0644,
-	)
+func Reset() error {
+	dir := filepath.Join(config.LOG_DIR)
+
+	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	l := &Log{
-		dir:   dir,
-		aof:   aof,
-		buf:   bufio.NewWriterSize(aof, 1024*1024),
-		queue: make(chan SavePoint, 8192),
-		done:  make(chan struct{}),
+	for _, entry := range entries {
+		err := os.RemoveAll(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			return err
+		}
 	}
 
-	l.wg.Add(1)
-	go l.startBackgroundSync(10 * time.Millisecond)
+	return os.Remove(filepath.Join(dir, "checkpoint"))
+}
 
-	return l, nil
+func (log *Log) Start() error {
+	if err := log.rotate(); err != nil {
+		return err
+	}
+
+	log.wg.Add(1)
+	go log.startBackgroundSync(10 * time.Millisecond)
+
+	return nil
 }
 
 func (log *Log) Close() error {
@@ -71,7 +86,7 @@ func (log *Log) Close() error {
 		return err
 	}
 
-	if err := log.Sync(); err != nil {
+	if err := log.sync(); err != nil {
 		log.aof.Close()
 		return err
 	}
@@ -82,35 +97,23 @@ func (log *Log) Close() error {
 func (log *Log) Append(sp SavePoint) error {
 	select {
 	case log.queue <- sp:
+		log.nrecords++
 		return nil
 	case <-log.done:
 		return os.ErrClosed
 	}
 }
 
-func (log *Log) Write(data []byte) error {
+func (log *Log) write(data []byte) error {
 	_, err := log.buf.Write(data)
 	return err
-}
-
-func (log *Log) Read(buf []byte, offset int64) error {
-	_, err := log.aof.ReadAt(buf, offset)
-	return err
-}
-
-func (log *Log) Seek(offfset int64, whence int) (int64, error) {
-	return log.aof.Seek(offfset, whence)
-}
-
-func (log *Log) Truncate(size int64) error {
-	return log.aof.Truncate(size)
 }
 
 func (log *Log) Reader() io.Reader {
 	return log.aof
 }
 
-func (log *Log) Sync() error {
+func (log *Log) sync() error {
 	if err := log.buf.Flush(); err != nil {
 		return err
 	}
@@ -133,7 +136,7 @@ func (log *Log) startBackgroundSync(interval time.Duration) {
 				return
 			}
 
-			if err := log.Sync(); err != nil {
+			if err := log.sync(); err != nil {
 				log.setError(err)
 			}
 
@@ -142,7 +145,7 @@ func (log *Log) startBackgroundSync(interval time.Duration) {
 		case sp := <-log.queue:
 			buf = EncodeRecord(buf, sp)
 
-			if err := log.Write(buf); err != nil {
+			if err := log.write(buf); err != nil {
 				log.setError(err)
 				return
 			}
@@ -152,7 +155,7 @@ func (log *Log) startBackgroundSync(interval time.Duration) {
 				case sp := <-log.queue:
 					buf = EncodeRecord(buf, sp)
 
-					if err := log.Write(buf); err != nil {
+					if err := log.write(buf); err != nil {
 						log.setError(err)
 						return
 					}
@@ -161,8 +164,25 @@ func (log *Log) startBackgroundSync(interval time.Duration) {
 				}
 			}
 
+			if log.nrecords > WalLimit {
+				if err := log.drain(); err != nil {
+					log.setError(err)
+					return
+				}
+
+				if err := log.sync(); err != nil {
+					log.setError(err)
+					return
+				}
+
+				if err := log.rotate(); err != nil {
+					log.setError(err)
+					return
+				}
+			}
+
 		case <-ticker.C:
-			if err := log.Sync(); err != nil {
+			if err := log.sync(); err != nil {
 				log.setError(err)
 				return
 			}
@@ -179,7 +199,7 @@ func (log *Log) drain() error {
 		case sp := <-log.queue:
 			buf = EncodeRecord(buf, sp)
 
-			if err := log.Write(buf); err != nil {
+			if err := log.write(buf); err != nil {
 				return err
 			}
 		default:

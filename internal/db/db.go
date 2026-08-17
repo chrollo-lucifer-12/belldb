@@ -2,7 +2,6 @@ package db
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 
@@ -14,6 +13,7 @@ import (
 type DB struct {
 	kv  *KV
 	log *wal.Log
+	lsn uint64
 }
 
 func errMetricNotFound(metric string) error {
@@ -31,34 +31,44 @@ func NewDB() *DB {
 func (db *DB) Open() error {
 
 	db.kv = NewKV(5000)
+	db.kv.onFlush = func(u uint64) {
+		db.log.Checkpoint(u)
+	}
 
-	maxTs, err := db.recoverMetadata()
+	err := db.recoverMetadata()
 	if err != nil {
 		return err
 	}
 
-	db.log, err = wal.NewLog()
-	if err != nil {
+	if err := db.recover(); err != nil {
 		return err
 	}
 
-	return db.recover(maxTs)
+	if err := wal.Reset(); err != nil {
+		return err
+	}
+
+	db.log = wal.NewLog()
+	return db.log.Start()
+
 }
 
 func (db *DB) Close() error {
-	//	db.kv.Flush()
+	db.kv.Flush()
 	return db.log.Close()
 }
 
 func (db *DB) Put(metric string, timestamp int64, value float64) error {
+	db.lsn++
 
 	sp := wal.SavePoint{
 		Metric: metric,
 		Point:  storage.Point{Timestamp: timestamp, Value: value},
 	}
+
 	db.log.Append(sp)
 
-	return db.kv.Put(metric, timestamp, value)
+	return db.kv.Put(metric, timestamp, value, db.lsn)
 }
 
 func (db *DB) Get(metric string, timestamp int64) (float64, error) {
@@ -69,16 +79,14 @@ func (db *DB) Range(metric string, start, end int64) []storage.Point {
 	return db.kv.Range(metric, start, end)
 }
 
-func (db *DB) recoverMetadata() (int64, error) {
+func (db *DB) recoverMetadata() error {
 	entries, err := os.ReadDir(config.DATA_DIR)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return -1, nil
+			return nil
 		}
-		return -1, err
+		return err
 	}
-
-	maxTs := int64(0)
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -98,7 +106,7 @@ func (db *DB) recoverMetadata() (int64, error) {
 			if os.IsNotExist(err) {
 				continue
 			}
-			return -1, err
+			return err
 		}
 
 		series, ok := db.kv.Series[metric]
@@ -120,49 +128,23 @@ func (db *DB) recoverMetadata() (int64, error) {
 					Path:  chunk.Path,
 				},
 			)
-			maxTs = max(maxTs, chunk.MaxTs)
+
 		}
 	}
 
-	return maxTs, nil
+	return nil
 }
 
-func (db *DB) recover(maxTs int64) error {
-	for {
-		sp, err := wal.DecodeRecord(db.log.Reader())
+func (db *DB) recover() error {
 
-		if err == io.EOF || err == io.ErrUnexpectedEOF {
-			break
-		}
+	records, err := db.log.Recover()
+	if err != nil {
+		return err
+	}
 
-		if err != nil {
-			return err
-		}
-
-		series, ok := db.kv.Series[sp.Metric]
-
-		if !ok {
-			series = &Series{name: sp.Metric, cache: NewChunkCache(16)}
-
-			series.activeChunk = &storage.Chunk{
-				Points: make([]storage.Point, 0, ChunkSize),
-			}
-
-			db.kv.Series[sp.Metric] = series
-
-		}
-
-		if sp.Point.Timestamp <= maxTs {
-			continue
-		}
-
-		if series.activeChunk == nil {
-			series.activeChunk = &storage.Chunk{}
-		}
-
-		series.activeChunk.Points = append(series.activeChunk.Points, sp.Point)
-
-		fmt.Println(sp)
+	for _, record := range records {
+		series := db.kv.GetOrCreateSeries(record.Metric)
+		series.Append(record.Point)
 	}
 
 	return nil

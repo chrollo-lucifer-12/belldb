@@ -40,12 +40,14 @@ func EncodeRecord(buf []byte, sp SavePoint) []byte {
 		buf = buf[:recordLen]
 	}
 
+	binary.LittleEndian.PutUint64(buf[0:8], sp.LSN)
+
 	binary.LittleEndian.PutUint32(
-		buf[0:4],
+		buf[8:12],
 		uint32(payloadLen),
 	)
 
-	offset := 4
+	offset := 12
 
 	binary.LittleEndian.PutUint16(
 		buf[offset:offset+2],
@@ -82,6 +84,13 @@ func EncodeRecord(buf []byte, sp SavePoint) []byte {
 }
 
 func DecodeRecord(r io.Reader) (SavePoint, error) {
+
+	var lsn uint64
+
+	if err := binary.Read(r, binary.LittleEndian, &lsn); err != nil {
+		return SavePoint{}, err
+	}
+
 	var length uint32
 
 	if err := binary.Read(r, binary.LittleEndian, &length); err != nil {
@@ -106,10 +115,10 @@ func DecodeRecord(r io.Reader) (SavePoint, error) {
 		return SavePoint{}, fmt.Errorf("checksum mismatch")
 	}
 
-	return DecodePayload(bytes.NewReader(payload))
+	return DecodePayload(bytes.NewReader(payload), lsn)
 }
 
-func DecodePayload(r io.Reader) (SavePoint, error) {
+func DecodePayload(r io.Reader, lsn uint64) (SavePoint, error) {
 	var metricLen uint16
 
 	if err := binary.Read(r, binary.LittleEndian, &metricLen); err != nil {
@@ -128,6 +137,7 @@ func DecodePayload(r io.Reader) (SavePoint, error) {
 	}
 
 	return SavePoint{
+		LSN:    lsn,
 		Metric: string(metric),
 		Point:  points[0],
 	}, nil
