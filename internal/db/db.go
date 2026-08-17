@@ -13,6 +13,7 @@ import (
 type DB struct {
 	kv  *KV
 	log *wal.Log
+
 	lsn uint64
 }
 
@@ -148,4 +149,8 @@ func (db *DB) recover() error {
 	}
 
 	return nil
+}
+
+func (db *DB) WaitForFlush() {
+	db.kv.WaitForFlush()
 }

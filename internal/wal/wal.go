@@ -62,7 +62,13 @@ func Reset() error {
 		}
 	}
 
-	return os.Remove(filepath.Join(dir, "checkpoint"))
+	path := filepath.Join(dir, "checkpoint")
+
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	return nil
 }
 
 func (log *Log) Start() error {

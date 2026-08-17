@@ -1,8 +1,12 @@
 package db
 
-import "github.com/belldb/internal/storage"
+import (
+	"fmt"
 
-const ChunkSize = 5000
+	"github.com/belldb/internal/storage"
+)
+
+const ChunkSize = 100
 
 type Series struct {
 	activeChunk *storage.Chunk
@@ -137,6 +141,10 @@ func lowerBound(points []storage.Point, timestamp int64) int {
 }
 
 func (s *Series) findChunk(timestamp int64) int {
+
+	fmt.Println("timestamp:", timestamp)
+	fmt.Println("chunks:", s.chunks)
+
 	if len(s.chunks) == 0 {
 		if s.activeChunk != nil && len(s.activeChunk.Points) > 0 {
 			return len(s.chunks)

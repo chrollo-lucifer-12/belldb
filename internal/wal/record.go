@@ -28,11 +28,10 @@ func Encode(p SavePoint) []byte {
 }
 
 func EncodeRecord(buf []byte, sp SavePoint) []byte {
-
 	metricLen := len(sp.Metric)
 
 	payloadLen := 2 + metricLen + 4 + 8 + 8
-	recordLen := 4 + payloadLen + 4
+	recordLen := 8 + 4 + payloadLen + 4
 
 	if cap(buf) < recordLen {
 		buf = make([]byte, recordLen)
@@ -73,10 +72,10 @@ func EncodeRecord(buf []byte, sp SavePoint) []byte {
 	)
 	offset += 8
 
-	checksum := crc32.ChecksumIEEE(buf[4 : 4+payloadLen])
+	checksum := crc32.ChecksumIEEE(buf[12 : 12+payloadLen])
 
 	binary.LittleEndian.PutUint32(
-		buf[4+payloadLen:],
+		buf[12+payloadLen:12+payloadLen+4],
 		checksum,
 	)
 

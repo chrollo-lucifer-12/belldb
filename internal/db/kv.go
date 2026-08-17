@@ -106,11 +106,11 @@ func (kv *KV) startWorkers(numWorkers int) {
 					continue
 				}
 
-				kv.onFlush(task.lsn)
-				kv.wg.Done()
-
 				series := kv.GetOrCreateSeries(task.SeriesName)
 				series.chunks = append(series.chunks, meta)
+
+				kv.onFlush(task.lsn)
+				kv.wg.Done()
 			}
 		}()
 	}
