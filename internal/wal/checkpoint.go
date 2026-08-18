@@ -45,8 +45,9 @@ func (log *Log) rotate() error {
 		return err
 	}
 
-	log.aof = aof
+	log.file = aof
 	log.buf = bufio.NewWriterSize(aof, 1024*1024)
+	log.nrecords = 0
 
 	return nil
 }

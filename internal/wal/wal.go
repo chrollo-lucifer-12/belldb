@@ -15,7 +15,7 @@ import (
 const WalLimit = 100
 
 type Log struct {
-	aof      *os.File
+	file     *os.File
 	buf      *bufio.Writer
 	nrecords int
 
@@ -88,22 +88,21 @@ func (log *Log) Close() error {
 	log.wg.Wait()
 
 	if err := log.getError(); err != nil {
-		log.aof.Close()
+		log.file.Close()
 		return err
 	}
 
 	if err := log.sync(); err != nil {
-		log.aof.Close()
+		log.file.Close()
 		return err
 	}
 
-	return log.aof.Close()
+	return log.file.Close()
 }
 
 func (log *Log) Append(sp SavePoint) error {
 	select {
 	case log.queue <- sp:
-		log.nrecords++
 		return nil
 	case <-log.done:
 		return os.ErrClosed
@@ -116,14 +115,14 @@ func (log *Log) write(data []byte) error {
 }
 
 func (log *Log) Reader() io.Reader {
-	return log.aof
+	return log.file
 }
 
 func (log *Log) sync() error {
 	if err := log.buf.Flush(); err != nil {
 		return err
 	}
-	return log.aof.Sync()
+	return log.file.Sync()
 }
 
 func (log *Log) startBackgroundSync(interval time.Duration) {
@@ -133,6 +132,8 @@ func (log *Log) startBackgroundSync(interval time.Duration) {
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+
+	dirty := false
 
 	for {
 		select {
@@ -156,6 +157,9 @@ func (log *Log) startBackgroundSync(interval time.Duration) {
 				return
 			}
 
+			dirty = true
+			log.nrecords++
+
 			for i := 0; i < 256; i++ {
 				select {
 				case sp := <-log.queue:
@@ -165,12 +169,14 @@ func (log *Log) startBackgroundSync(interval time.Duration) {
 						log.setError(err)
 						return
 					}
+					dirty = true
+					log.nrecords++
 				default:
 					i = 256
 				}
 			}
 
-			if log.nrecords > WalLimit {
+			if log.nrecords >= WalLimit {
 				if err := log.drain(); err != nil {
 					log.setError(err)
 					return
@@ -185,13 +191,21 @@ func (log *Log) startBackgroundSync(interval time.Duration) {
 					log.setError(err)
 					return
 				}
+
+				dirty = false
 			}
 
 		case <-ticker.C:
+			if !dirty {
+				continue
+			}
+
 			if err := log.sync(); err != nil {
 				log.setError(err)
 				return
 			}
+
+			dirty = true
 		}
 	}
 }

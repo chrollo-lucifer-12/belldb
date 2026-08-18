@@ -24,8 +24,6 @@ type DODChunk struct {
 
 	firstTimestamp int64
 	lastTimestamp  int64
-	lastDelta      int64
-	lastValue      uint64
 }
 
 func DecompressChunk(dodChunk *DODChunk) (Chunk, error) {
@@ -37,30 +35,23 @@ func DecompressChunk(dodChunk *DODChunk) (Chunk, error) {
 		return chunk, nil
 	}
 
-	if len(dodChunk.timestamps) < 8 {
+	if len(dodChunk.timestamps) < 8 || len(dodChunk.values) < 8 {
 		return Chunk{}, io.ErrUnexpectedEOF
 	}
 
 	timestampOffset := 0
+	valueOffset := 0
 
 	firstTimestamp := int64(
 		binary.LittleEndian.Uint64(
 			dodChunk.timestamps[timestampOffset : timestampOffset+8],
 		),
 	)
-
 	timestampOffset += 8
-
-	if len(dodChunk.values) < 8 {
-		return Chunk{}, io.ErrUnexpectedEOF
-	}
-
-	valueOffset := 0
 
 	lastValue := binary.LittleEndian.Uint64(
 		dodChunk.values[valueOffset : valueOffset+8],
 	)
-
 	valueOffset += 8
 
 	chunk.Points[0] = Point{
@@ -72,7 +63,8 @@ func DecompressChunk(dodChunk *DODChunk) (Chunk, error) {
 		return chunk, nil
 	}
 
-	if len(dodChunk.timestamps) < timestampOffset+8 {
+	if len(dodChunk.timestamps) < timestampOffset+8 ||
+		len(dodChunk.values) < valueOffset+8 {
 		return Chunk{}, io.ErrUnexpectedEOF
 	}
 
@@ -81,19 +73,13 @@ func DecompressChunk(dodChunk *DODChunk) (Chunk, error) {
 			dodChunk.timestamps[timestampOffset : timestampOffset+8],
 		),
 	)
-
 	timestampOffset += 8
 
 	lastTimestamp := firstTimestamp + lastDelta
 
-	if len(dodChunk.values) < valueOffset+8 {
-		return Chunk{}, io.ErrUnexpectedEOF
-	}
-
 	xor := binary.LittleEndian.Uint64(
 		dodChunk.values[valueOffset : valueOffset+8],
 	)
-
 	valueOffset += 8
 
 	lastValue ^= xor
@@ -104,7 +90,6 @@ func DecompressChunk(dodChunk *DODChunk) (Chunk, error) {
 	}
 
 	for i := 2; i < dodChunk.count; i++ {
-
 		dod, n := binary.Varint(
 			dodChunk.timestamps[timestampOffset:],
 		)
@@ -129,7 +114,6 @@ func DecompressChunk(dodChunk *DODChunk) (Chunk, error) {
 		xor := binary.LittleEndian.Uint64(
 			dodChunk.values[valueOffset : valueOffset+8],
 		)
-
 		valueOffset += 8
 
 		lastValue ^= xor
@@ -154,33 +138,33 @@ func CompressChunk(chunk *Chunk) (*DODChunk, error) {
 	count := len(chunk.Points)
 
 	dod := &DODChunk{
-		count:          len(chunk.Points),
+		count:          count,
 		firstTimestamp: chunk.Points[0].Timestamp,
 		lastTimestamp:  chunk.Points[count-1].Timestamp,
-
-		timestamps: make([]byte, 0, count*8),
-		values:     make([]byte, 0, count*8),
+		timestamps:     make([]byte, 0, count*8),
+		values:         make([]byte, 0, count*8),
 	}
 
 	var buf [8]byte
 
+	// First timestamp.
 	binary.LittleEndian.PutUint64(
 		buf[:],
 		uint64(chunk.Points[0].Timestamp),
 	)
-
 	dod.timestamps = append(dod.timestamps, buf[:]...)
 
+	// First value.
 	lastValue := math.Float64bits(chunk.Points[0].Value)
-	dod.lastValue = lastValue
 
 	binary.LittleEndian.PutUint64(buf[:], lastValue)
 	dod.values = append(dod.values, buf[:]...)
 
-	if len(chunk.Points) == 1 {
+	if count == 1 {
 		return dod, nil
 	}
 
+	// First delta.
 	lastTimestamp := chunk.Points[0].Timestamp
 	lastDelta := chunk.Points[1].Timestamp - lastTimestamp
 
@@ -188,20 +172,21 @@ func CompressChunk(chunk *Chunk) (*DODChunk, error) {
 		buf[:],
 		uint64(lastDelta),
 	)
-
 	dod.timestamps = append(dod.timestamps, buf[:]...)
 
 	lastTimestamp = chunk.Points[1].Timestamp
 
+	// Second value encoded as XOR against the first.
 	currValue := math.Float64bits(chunk.Points[1].Value)
-	xor := currValue ^ dod.lastValue
+	xor := currValue ^ lastValue
 
 	binary.LittleEndian.PutUint64(buf[:], xor)
 	dod.values = append(dod.values, buf[:]...)
 
-	dod.lastValue = currValue
+	lastValue = currValue
 
-	for i := 2; i < len(chunk.Points); i++ {
+	// Remaining points: delta-of-delta + XOR.
+	for i := 2; i < count; i++ {
 		ts := chunk.Points[i].Timestamp
 
 		delta := ts - lastTimestamp
@@ -216,16 +201,13 @@ func CompressChunk(chunk *Chunk) (*DODChunk, error) {
 		lastDelta = delta
 
 		currValue := math.Float64bits(chunk.Points[i].Value)
-		xor := currValue ^ dod.lastValue
+		xor := currValue ^ lastValue
 
 		binary.LittleEndian.PutUint64(buf[:], xor)
 		dod.values = append(dod.values, buf[:]...)
 
-		dod.lastValue = currValue
+		lastValue = currValue
 	}
-
-	dod.lastTimestamp = lastTimestamp
-	dod.lastDelta = lastDelta
 
 	return dod, nil
 }
@@ -258,20 +240,20 @@ func EncodeDODChunk(w io.Writer, chunk DODChunk) error {
 	return nil
 }
 
-func DecodeDODChunk(r io.Reader, timestamps []byte, values []byte) (*DODChunk, error) {
+func DecodeDODChunk(
+	r io.Reader,
+	timestamps []byte,
+	values []byte,
+) (*DODChunk, error) {
 	var (
-		pointsCount    int32
+		pointsCount    uint32
 		firstTimestamp int64
-		timestampsLen  int32
-		valuesLen      int32
+		timestampsLen  uint32
+		valuesLen      uint32
 	)
 
 	if err := binary.Read(r, binary.LittleEndian, &pointsCount); err != nil {
 		return nil, fmt.Errorf("read count: %w", err)
-	}
-
-	if pointsCount < 0 {
-		return nil, fmt.Errorf("invalid points count")
 	}
 
 	if err := binary.Read(r, binary.LittleEndian, &firstTimestamp); err != nil {
@@ -282,14 +264,10 @@ func DecodeDODChunk(r io.Reader, timestamps []byte, values []byte) (*DODChunk, e
 		return nil, fmt.Errorf("read timestamps length: %w", err)
 	}
 
-	if timestampsLen < 0 {
-		return nil, fmt.Errorf("invalid timestamps len")
-	}
-
 	if cap(timestamps) < int(timestampsLen) {
-		timestamps = make([]byte, timestampsLen)
+		timestamps = make([]byte, int(timestampsLen))
 	} else {
-		timestamps = timestamps[:timestampsLen]
+		timestamps = timestamps[:int(timestampsLen)]
 	}
 
 	if _, err := io.ReadFull(r, timestamps); err != nil {
@@ -301,9 +279,9 @@ func DecodeDODChunk(r io.Reader, timestamps []byte, values []byte) (*DODChunk, e
 	}
 
 	if cap(values) < int(valuesLen) {
-		values = make([]byte, valuesLen)
+		values = make([]byte, int(valuesLen))
 	} else {
-		values = values[:valuesLen]
+		values = values[:int(valuesLen)]
 	}
 
 	if _, err := io.ReadFull(r, values); err != nil {
@@ -319,8 +297,7 @@ func DecodeDODChunk(r io.Reader, timestamps []byte, values []byte) (*DODChunk, e
 }
 
 func EncodePoints(w io.Writer, points []Point) error {
-	size := 4 + len(points)*16
-	buf := make([]byte, size)
+	buf := make([]byte, 4+len(points)*16)
 
 	binary.LittleEndian.PutUint32(
 		buf[0:4],
@@ -348,17 +325,14 @@ func EncodePoints(w io.Writer, points []Point) error {
 }
 
 func DecodePoints(r io.Reader) ([]Point, error) {
-	var pointsLen int32
+	var pointsLen uint32
 
 	if err := binary.Read(r, binary.LittleEndian, &pointsLen); err != nil {
 		return nil, err
 	}
 
-	if pointsLen < 0 {
-		return nil, fmt.Errorf("invalid points length: %d", pointsLen)
-	}
+	points := make([]Point, int(pointsLen))
 
-	points := make([]Point, pointsLen)
 	var buf [16]byte
 
 	for i := range points {

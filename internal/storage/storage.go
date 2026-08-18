@@ -9,17 +9,6 @@ import (
 	"github.com/belldb/internal/config"
 )
 
-func LoadChunk(path string) ([]Point, error) {
-
-	fp, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer fp.Close()
-
-	return DecodePoints(fp)
-}
-
 func LoadDODChunk(
 	path string,
 	timestamps *[]byte,

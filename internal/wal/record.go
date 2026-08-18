@@ -11,21 +11,6 @@ import (
 	"github.com/belldb/internal/storage"
 )
 
-func Encode(p SavePoint) []byte {
-	var buf bytes.Buffer
-
-	binary.Write(
-		&buf,
-		binary.LittleEndian,
-		uint16(len(p.Metric)),
-	)
-
-	buf.WriteString(p.Metric)
-
-	storage.EncodePoints(&buf, []storage.Point{p.Point})
-
-	return buf.Bytes()
-}
 
 func EncodeRecord(buf []byte, sp SavePoint) []byte {
 	metricLen := len(sp.Metric)
