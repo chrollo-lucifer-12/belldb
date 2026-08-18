@@ -4,12 +4,14 @@ import (
 	"bufio"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 
 	"github.com/belldb/internal/config"
+	"github.com/belldb/internal/storage"
 )
 
 func (log *Log) Checkpoint(lsn uint64) error {
@@ -27,26 +29,31 @@ func (log *Log) Checkpoint(lsn uint64) error {
 }
 
 func (log *Log) rotate() error {
-	dir := config.LOG_DIR
+
+	if log.file != nil {
+		if err := storage.SyncFile(log.file); err != nil {
+			return err
+		}
+
+		if err := storage.CloseFile(log.file); err != nil {
+			return err
+		}
+	}
 
 	log.segmentID++
 
-	checkpointIDStr := strconv.Itoa(log.segmentID)
-
-	walPath := filepath.Join(dir, checkpointIDStr)
-
-	aof, err := os.OpenFile(
-		walPath,
-		os.O_CREATE|os.O_RDWR|os.O_APPEND,
-		0644,
+	path := filepath.Join(
+		config.LOG_DIR,
+		fmt.Sprintf("%d.wal", log.segmentID),
 	)
 
+	file, err := storage.OpenAppendFile(path)
 	if err != nil {
 		return err
 	}
 
-	log.file = aof
-	log.buf = bufio.NewWriterSize(aof, 1024*1024)
+	log.file = file
+	log.buf = bufio.NewWriterSize(file, 64*1024)
 	log.nrecords = 0
 
 	return nil

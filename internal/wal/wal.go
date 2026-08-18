@@ -2,6 +2,7 @@ package wal
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -88,16 +89,16 @@ func (log *Log) Close() error {
 	log.wg.Wait()
 
 	if err := log.getError(); err != nil {
-		log.file.Close()
+		_ = storage.CloseFile(log.file)
 		return err
 	}
 
 	if err := log.sync(); err != nil {
-		log.file.Close()
+		_ = storage.CloseFile(log.file)
 		return err
 	}
 
-	return log.file.Close()
+	return storage.CloseFile(log.file)
 }
 
 func (log *Log) Append(sp SavePoint) error {
@@ -110,8 +111,11 @@ func (log *Log) Append(sp SavePoint) error {
 }
 
 func (log *Log) write(data []byte) error {
-	_, err := log.buf.Write(data)
-	return err
+	if _, err := log.buf.Write(data); err != nil {
+		return fmt.Errorf("write WAL: %w", err)
+	}
+
+	return nil
 }
 
 func (log *Log) Reader() io.Reader {
@@ -120,9 +124,14 @@ func (log *Log) Reader() io.Reader {
 
 func (log *Log) sync() error {
 	if err := log.buf.Flush(); err != nil {
+		return fmt.Errorf("flush WAL buffer: %w", err)
+	}
+
+	if err := storage.SyncFile(log.file); err != nil {
 		return err
 	}
-	return log.file.Sync()
+
+	return nil
 }
 
 func (log *Log) startBackgroundSync(interval time.Duration) {

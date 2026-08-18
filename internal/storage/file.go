@@ -11,7 +11,7 @@ const (
 	filePerm = 0644
 )
 
-func openFile(path string) (*os.File, error) {
+func OpenFile(path string) (*os.File, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", path, err)
@@ -19,7 +19,7 @@ func openFile(path string) (*os.File, error) {
 	return file, nil
 }
 
-func createFile(path string) (*os.File, error) {
+func CreateFile(path string) (*os.File, error) {
 	if err := os.MkdirAll(filepath.Dir(path), dirPerm); err != nil {
 		return nil, fmt.Errorf("create directory for %s: %w", path, err)
 	}
@@ -35,7 +35,7 @@ func createFile(path string) (*os.File, error) {
 	return file, nil
 }
 
-func openAppendFile(path string) (*os.File, error) {
+func OpenAppendFile(path string) (*os.File, error) {
 	if err := os.MkdirAll(filepath.Dir(path), dirPerm); err != nil {
 		return nil, err
 	}
@@ -52,7 +52,7 @@ func openAppendFile(path string) (*os.File, error) {
 	return file, nil
 }
 
-func syncFile(file *os.File) error {
+func SyncFile(file *os.File) error {
 	if err := file.Sync(); err != nil {
 		return fmt.Errorf("sync %s: %w", file.Name(), err)
 	}
@@ -60,7 +60,7 @@ func syncFile(file *os.File) error {
 	return nil
 }
 
-func syncDir(path string) error {
+func SyncDir(path string) error {
 	dir, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("open directory %s: %w", path, err)
@@ -74,7 +74,7 @@ func syncDir(path string) error {
 	return nil
 }
 
-func closeFile(file *os.File) error {
+func CloseFile(file *os.File) error {
 	if err := file.Close(); err != nil {
 		return fmt.Errorf("close %s: %w", file.Name(), err)
 	}
@@ -82,7 +82,7 @@ func closeFile(file *os.File) error {
 	return nil
 }
 
-func removeFile(path string) error {
+func RemoveFile(path string) error {
 	if err := os.Remove(path); err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -94,12 +94,12 @@ func removeFile(path string) error {
 	return nil
 }
 
-func fileExists(path string) bool {
+func FileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
 
-func readFile(path string) ([]byte, error) {
+func ReadFile(path string) ([]byte, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
@@ -108,7 +108,7 @@ func readFile(path string) ([]byte, error) {
 	return data, nil
 }
 
-func writeFile(path string, data []byte) error {
+func WriteFile(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), dirPerm); err != nil {
 		return fmt.Errorf("create directory for %s: %w", path, err)
 	}
@@ -120,7 +120,7 @@ func writeFile(path string, data []byte) error {
 	return nil
 }
 
-func atomicWrite(path string, write func(*os.File) error) error {
+func AtomicWrite(path string, write func(*os.File) error) error {
 
 	dir := filepath.Dir(path)
 
@@ -136,8 +136,8 @@ func atomicWrite(path string, write func(*os.File) error) error {
 	tmpPath := tmp.Name()
 
 	cleanup := func() {
-		_ = closeFile(tmp)
-		_ = removeFile(tmpPath)
+		_ = CloseFile(tmp)
+		_ = RemoveFile(tmpPath)
 	}
 
 	if err := write(tmp); err != nil {
@@ -145,19 +145,23 @@ func atomicWrite(path string, write func(*os.File) error) error {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 
-	if err := syncFile(tmp); err != nil {
+	if err := SyncFile(tmp); err != nil {
 		cleanup()
 		return err
 	}
 
-	if err := closeFile(tmp); err != nil {
-		_ = removeFile(tmpPath)
+	if err := CloseFile(tmp); err != nil {
+		_ = RemoveFile(tmpPath)
 		return err
 	}
 
 	if err := os.Rename(tmpPath, path); err != nil {
-		_ = removeFile(tmpPath)
+		_ = RemoveFile(tmpPath)
 		return fmt.Errorf("rename %s to %s: %w", tmpPath, path, err)
+	}
+
+	if err := SyncDir(dir); err != nil {
+		return err
 	}
 
 	return nil

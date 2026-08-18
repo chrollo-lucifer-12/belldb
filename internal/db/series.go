@@ -187,10 +187,17 @@ func (s *Series) loadChunk(idx int) ([]storage.Point, error) {
 		return points, nil
 	}
 
-	dodChunk, err := storage.LoadDODChunk(s.chunks[idx].Path, &s.decodeTimestamps, &s.decodeValues)
+	dodChunk, timestamps, values, err := storage.LoadDODChunk(
+		s.chunks[idx].Path,
+		s.decodeTimestamps,
+		s.decodeValues,
+	)
 	if err != nil {
 		return nil, err
 	}
+
+	s.decodeTimestamps = timestamps
+	s.decodeValues = values
 
 	chunk, err := storage.DecompressChunk(dodChunk)
 	if err != nil {

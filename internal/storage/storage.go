@@ -11,36 +11,33 @@ import (
 
 func LoadDODChunk(
 	path string,
-	timestamps *[]byte,
-	values *[]byte,
-) (*DODChunk, error) {
-	fp, err := os.Open(path)
+	timestamps []byte,
+	values []byte,
+) (*DODChunk, []byte, []byte, error) {
+	file, err := OpenFile(path)
 	if err != nil {
-		return nil, err
+		return nil, timestamps, values, err
 	}
-	defer fp.Close()
+	defer CloseFile(file)
 
-	return DecodeDODChunk(
-		fp,
-		*timestamps,
-		*values,
-	)
+	chunk, err := DecodeDODChunk(file, timestamps, values)
+	if err != nil {
+		return nil, timestamps, values,
+			fmt.Errorf("decode chunk %s: %w", path, err)
+	}
+
+	return chunk, timestamps, values, nil
 }
 
 func FlushDODChunk(metric string, chunk *DODChunk) (ChunkMetaData, error) {
 	dir := filepath.Join(config.DATA_DIR, metric)
 
-	filename := fmt.Sprintf("%d.chunk", chunk.firstTimestamp)
-	path := filepath.Join(dir, filename)
+	path := filepath.Join(dir, fmt.Sprintf("%d.chunk", chunk.firstTimestamp))
 
-	file, err := os.Create(path)
-	if err != nil {
-		return ChunkMetaData{}, err
-	}
-	defer file.Close()
-
-	if err := EncodeDODChunk(file, *chunk); err != nil {
-		return ChunkMetaData{}, nil
+	if err := AtomicWrite(path, func(f *os.File) error {
+		return EncodeDODChunk(f, *chunk)
+	}); err != nil {
+		return ChunkMetaData{}, fmt.Errorf("flush chunk: %w", err)
 	}
 
 	return ChunkMetaData{
