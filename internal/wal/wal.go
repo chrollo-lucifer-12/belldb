@@ -13,8 +13,6 @@ import (
 	"github.com/belldb/internal/storage"
 )
 
-const WalLimit = 100
-
 type Log struct {
 	file     *os.File
 	buf      *bufio.Writer
@@ -42,7 +40,7 @@ func NewLog() *Log {
 	return &Log{
 		segmentID: 0,
 		nrecords:  0,
-		queue:     make(chan SavePoint, 8192),
+		queue:     make(chan SavePoint, config.QueueSize),
 		done:      make(chan struct{}),
 	}
 
@@ -78,7 +76,7 @@ func (log *Log) Start() error {
 	}
 
 	log.wg.Add(1)
-	go log.startBackgroundSync(10 * time.Millisecond)
+	go log.startBackgroundSync(config.SyncInterval)
 
 	return nil
 }
@@ -185,7 +183,7 @@ func (log *Log) startBackgroundSync(interval time.Duration) {
 				}
 			}
 
-			if log.nrecords >= WalLimit {
+			if log.nrecords >= int(config.SegmentSize) {
 				if err := log.drain(); err != nil {
 					log.setError(err)
 					return

@@ -102,7 +102,7 @@ func lastCheckpoint() (uint64, error) {
 }
 
 func getRecords(lsn uint64) ([]SavePoint, error) {
-	segmentID := lsn/WalLimit + 1
+	segmentID := lsn/uint64(config.SegmentSize) + 1
 
 	var res []SavePoint
 

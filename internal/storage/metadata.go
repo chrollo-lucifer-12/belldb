@@ -33,7 +33,7 @@ func SaveMeta(metadata Metadata, dir string) error {
 
 		return nil
 	}); err != nil {
-		return fmt.Errorf("save metadat: %w", err)
+		return fmt.Errorf("save metadata: %w", err)
 	}
 
 	return nil

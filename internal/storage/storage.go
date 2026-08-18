@@ -62,12 +62,12 @@ func Flush(metric string, points []Point) (ChunkMetaData, error) {
 
 	fp, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil {
-		return ChunkMetaData{}, err
+		return ChunkMetaData{}, fmt.Errorf("flush :%w", err)
 	}
 	defer fp.Close()
 
 	if err := EncodePoints(fp, points); err != nil {
-		return ChunkMetaData{}, err
+		return ChunkMetaData{}, fmt.Errorf("flush :%w", err)
 	}
 
 	return meta, nil
